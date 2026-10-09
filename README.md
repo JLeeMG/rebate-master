@@ -82,8 +82,12 @@ without a rule stops the month being journalled.
 **Each month:**
 
 1. Load the month's sales: *Load data* → *Sales for the accrual*, using the
-   **MGFP Actuals - Trading Detail by Class and Customer** export. A newer
-   load replaces the months it covers.
+   **MGRM Rebates - Recent Sales by Class and Customer** export (the last few
+   months of sales only; a megabyte or two). A newer load replaces the months
+   it covers and keeps the older ones. The full-history search (*MGFP Actuals -
+   Trading Detail*, over 30 MB) is too large for the screen; load it from the
+   command line if the history ever needs reloading:
+   `.venv\Scripts\python.exe -m mgrm load trading_detail <file.csv> --as <your email>`.
 2. Open *Rebates → Monthly accrual*, choose the entity and month. The schedule
    shows each agreement's sales in scope, rate and rebate, by brand.
    - **Blockers** (in red) must be cleared first: an agreement without a rule,
