@@ -85,6 +85,7 @@ In PowerShell, in this folder:
 | Run the test suite | `.venv\Scripts\python.exe -m pytest` |
 | Update the database after new code | `.venv\Scripts\python.exe -m mgrm migrate` |
 | Add an administrator (first set-up, or if locked out) | `.venv\Scripts\python.exe -m mgrm create-admin` |
+| Set a new password for someone who forgot theirs | `.venv\Scripts\python.exe -m mgrm reset-password <their email>` (asks for the new password twice; recorded in the audit log) |
 | Load a NetSuite register export | `.venv\Scripts\python.exe -m mgrm load customers <file.csv> --as <your email>` (or `classes`), or *Load data* in the platform |
 
 ## First-time installation

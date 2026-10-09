@@ -1,6 +1,7 @@
 """Command line: python -m mgrm <command>
 
     migrate                  bring the database structure up to date
+    reset-password           set a new password for a locked-out user (on this computer only)
     create-admin             add an administrator (first set-up, or recovery if locked out)
     serve                    start the rebate master at http://localhost:8001
     load                     load a NetSuite register CSV export (customers or classes)
@@ -136,6 +137,45 @@ def import_from_forecasting(args) -> int:
     return 0 if report.verified else 1
 
 
+def reset_password(args) -> int:
+    """For someone locked out: needs access to this computer, which is the proof of identity here."""
+    from sqlalchemy import select
+
+    from mgrm.auth.passwords import password_problem
+    from mgrm.auth.users import UserError, audit, set_password
+    from mgrm.models import AppUser, AuthMethod
+
+    with _session_factory().begin() as session:
+        user = session.scalar(select(AppUser).where(AppUser.email == args.email.strip().lower()))
+        if user is None:
+            print(f"No user {args.email}.")
+            return 1
+        if user.auth_method is not AuthMethod.LOCAL:
+            print(f"{user.email} signs in with Microsoft 365; reset the password in Microsoft instead.")
+            return 1
+        while True:
+            password = getpass.getpass("New password (at least 12 characters; nothing shows as you type): ")
+            problem = password_problem(password)
+            if problem:
+                print(problem)
+                continue
+            if getpass.getpass("Same password again: ") != password:
+                print("They do not match. Try again.")
+                continue
+            break
+        try:
+            set_password(session, actor=user, user=user, password=password)
+        except UserError as exc:
+            print(f"Not changed: {exc}")
+            return 1
+        if not user.is_active:
+            user.is_active = True
+            audit(session, user, "user.activate", user.email, via="command line password reset")
+        audit(session, user, "user.reset_password", user.email, via="command line on this computer")
+    print(f"Password changed for {user.email}. Sign in with it now.")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="python -m mgrm", description="MacGear Rebate Master")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -158,6 +198,9 @@ def main(argv: list[str] | None = None) -> int:
     import_parser = sub.add_parser("import-from-forecasting", help="one-time move out of the forecasting platform")
     import_parser.add_argument("--source-url", required=True, help="the forecasting platform's DATABASE_URL")
     import_parser.set_defaults(fn=import_from_forecasting)
+    reset_parser = sub.add_parser("reset-password", help="set a new password for a locked-out user")
+    reset_parser.add_argument("email")
+    reset_parser.set_defaults(fn=reset_password)
     args = parser.parse_args(argv)
     return args.fn(args)
 
