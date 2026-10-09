@@ -16,7 +16,7 @@
   <label>Group
     <select name="group"><option value="">Any</option>{% for g in groups %}<option value="{{ g.code }}" {{ "selected" if group == g.code }}>{{ g.name }} ({{ counts.get(g.code, 0) }})</option>{% endfor %}</select>
   </label>
-  <label><input type="checkbox" name="unmapped" value="true" {{ "checked" if unmapped }} style="display:inline;width:auto"> Only customers without a group</label>
+  <label><input type="checkbox" name="unmapped" value="true" {{ "checked" if unmapped }} class="tick"> Only customers without a group</label>
   <button type="submit">Show</button>
 </form>
 

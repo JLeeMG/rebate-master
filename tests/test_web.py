@@ -22,7 +22,7 @@ REVIEW, ADMIN_PAGES, LOADS = ["/rebates/review"], ["/admin/users", "/admin/audit
         (Role.REBATE_REVIEWER, READ_PAGES + REVIEW, ADMIN_PAGES + LOADS),
         (Role.REBATE_MAINTAINER, READ_PAGES + LOADS + REVIEW + ["/rebates/new"], ADMIN_PAGES),
         (Role.REBATE_EDITOR, READ_PAGES + LOADS + ["/rebates/new"], REVIEW + ADMIN_PAGES),
-        (Role.ADMIN, READ_PAGES + REVIEW + ADMIN_PAGES + LOADS, []),
+        (Role.ADMIN, READ_PAGES + ADMIN_PAGES + LOADS, REVIEW),  # the administrator does not approve
     ],
 )
 def test_page_access(client, make_user, role, allowed, refused):
@@ -112,7 +112,7 @@ def test_every_page_is_free_of_bare_dollars_and_markers(client, make_user, db, t
     sign_in(client, "admin@example.com")
     load_workbook_through_screen(client, tmp_path)
     agreement = db.query(RebateAgreement).one()
-    for path in READ_PAGES + REVIEW + ADMIN_PAGES + LOADS + [f"/rebates/agreement/{agreement.id}"]:
+    for path in READ_PAGES + ADMIN_PAGES + LOADS + [f"/rebates/agreement/{agreement.id}"]:
         response = client.get(path)
         assert response.status_code == 200, path
         assert scan_generated_text(response.text) == [], path

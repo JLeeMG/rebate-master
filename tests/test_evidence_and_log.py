@@ -139,8 +139,9 @@ def test_the_previous_rate_is_recorded_with_the_change(db, siobhan, ken, agreeme
 def test_evidence_can_never_be_changed_or_removed(db, siobhan, agreement):
     rate = propose(db, siobhan, agreement)
     evidence = db.scalar(select(EvidenceFile).where(EvidenceFile.rate_id == rate.id))
+    # The platform's account has no right to try; behind that, a trigger stops even the owner (test_database_security).
     for statement in ("UPDATE evidence_file SET content = 'x' WHERE id = :i", "DELETE FROM evidence_file WHERE id = :i"):
-        with pytest.raises(DBAPIError, match="kept exactly as uploaded"):
+        with pytest.raises(DBAPIError, match="permission denied"):
             with db.begin_nested():
                 db.execute(text(statement), {"i": evidence.id})
 

@@ -1,11 +1,19 @@
 """Creating and changing users. Every change is written to the audit log."""
 
+from contextvars import ContextVar
+
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from mgrm.auth.passwords import hash_password
 from mgrm.auth.roles import Role
 from mgrm.models import AppUser, AuditEvent, AuthMethod
+
+
+# The network address of the web request being served, set for every request (mgrm.web.hardening).
+# None on the command line, where the audit entry names the Windows user instead.
+request_address: ContextVar[str | None] = ContextVar("request_address", default=None)
+SUBJECT_LENGTH = 200
 
 
 class UserError(ValueError):
@@ -20,7 +28,13 @@ def normalise_email(email: str) -> str:
 
 
 def audit(session: Session, actor: AppUser | None, action: str, subject: str, **detail) -> None:
-    session.add(AuditEvent(actor_id=actor.id if actor else None, action=action, subject=subject, detail=detail))
+    session.add(AuditEvent(actor_id=actor.id if actor else None, action=action, subject=subject[:SUBJECT_LENGTH],
+                           address=request_address.get(), detail=detail))
+
+
+def end_sessions(user: AppUser) -> None:
+    """Signs the user out everywhere: every session they hold stops working on its next click."""
+    user.session_version += 1
 
 
 def create_user(
@@ -78,6 +92,7 @@ def change_role(session: Session, *, actor: AppUser, user: AppUser, role: Role) 
         _guard_last_admin(session, user)
     audit(session, actor, "user.change_role", user.email, old=user.role.value, new=role.value)
     user.role = role
+    end_sessions(user)
 
 
 def set_active(session: Session, *, actor: AppUser, user: AppUser, active: bool) -> None:
@@ -87,14 +102,18 @@ def set_active(session: Session, *, actor: AppUser, user: AppUser, active: bool)
         _guard_last_admin(session, user)
     audit(session, actor, "user.activate" if active else "user.deactivate", user.email)
     user.is_active = active
+    end_sessions(user)
 
 
-def set_password(session: Session, *, actor: AppUser, user: AppUser, password: str) -> None:
+def set_password(session: Session, *, actor: AppUser | None, user: AppUser, password: str) -> None:
+    """actor None: set on the command line. Unless people set their own, the password is temporary."""
     if user.auth_method is not AuthMethod.LOCAL:
         raise UserError("This user signs in with Microsoft 365; their password is managed by Microsoft.")
     try:
         user.password_hash = hash_password(password)
     except ValueError as exc:
         raise UserError(str(exc)) from exc
-    user.must_change_password = actor.id != user.id
-    audit(session, actor, "user.set_password", user.email, by_self=actor.id == user.id)
+    by_self = actor is not None and actor.id == user.id
+    user.must_change_password = not by_self
+    end_sessions(user)
+    audit(session, actor, "user.set_password", user.email, by_self=by_self)

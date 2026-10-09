@@ -9,8 +9,9 @@ The contract (field names and meanings) is pinned by tests/test_feed.py.
 Changing it means a new version (/api/v2), not an edit to v1.
 """
 
+import logging
 import secrets
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from sqlalchemy import select
@@ -18,12 +19,14 @@ from sqlalchemy.orm import Session
 
 from mgrm.data.files import bytes_sha256
 from mgrm.models import ApiToken, Brand, Customer, CustomerGroup, RebateAgreement, RebateRate, ReviewStatus
-from mgrm.web.security import get_db
+from mgrm.web.security import client_address, get_db
 
 router = APIRouter(prefix="/api/v1")
 FEED_VERSION = "1"
 SOURCE = "MacGear Rebate Master"
 TOKEN_BYTES = 32
+TOKEN_LIFETIME = timedelta(days=365)
+log = logging.getLogger("mgrm.security")
 
 
 def new_token() -> tuple[str, str]:
@@ -32,14 +35,16 @@ def new_token() -> tuple[str, str]:
     return token, bytes_sha256(token.encode())
 
 
-def authorised(authorization: str = Header(default=""), db: Session = Depends(get_db)) -> ApiToken:
+def authorised(request: Request, authorization: str = Header(default=""), db: Session = Depends(get_db)) -> ApiToken:
     scheme, _, token = authorization.partition(" ")
     if scheme.lower() != "bearer" or not token:
         raise HTTPException(status_code=401, detail="A feed token is required: Authorization: Bearer <token>")
     record = db.scalar(select(ApiToken).where(ApiToken.token_hash == bytes_sha256(token.strip().encode())))
-    if record is None or record.revoked_at is not None:
-        raise HTTPException(status_code=401, detail="Unknown or revoked feed token")
-    record.last_used_at = datetime.now(UTC)
+    now = datetime.now(UTC)
+    if record is None or record.revoked_at is not None or (record.expires_at is not None and record.expires_at <= now):
+        log.warning("Feed refused from %s: %s token", client_address(request), "unknown" if record is None else "revoked or expired")
+        raise HTTPException(status_code=401, detail="Unknown, revoked or expired feed token")
+    record.last_used_at = now
     return record
 
 

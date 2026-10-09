@@ -1,21 +1,28 @@
-"""Who is signed in, what they may do, and protection for forms."""
+"""Who is signed in, what they may do, and protection for forms and for sign-in."""
 
 import secrets
 import time
 from collections.abc import Callable
-from dataclasses import dataclass, field
+from datetime import UTC, datetime, timedelta
 
 from fastapi import Depends, Request
+from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
 
 from mgrm.auth.roles import Permission, can
-from mgrm.models import AppUser
+from mgrm.models import AppUser, FailedSignIn
 
 SESSION_USER_KEY = "user_id"
+SESSION_VERSION_KEY = "session_version"
+SESSION_STARTED_KEY = "signed_in_at"
 SESSION_CSRF_KEY = "csrf"
+SESSION_ABSOLUTE_SECONDS = 12 * 60 * 60  # signed out 12 hours after signing in, however busy
 
-MAX_FAILED_SIGN_INS = 5
-LOCKOUT_SECONDS = 15 * 60
+# Password guessing is slowed per network address, so a stranger cannot lock someone else out.
+MAX_FAILED_SIGN_INS = 5  # for one email, from one address
+MAX_FAILED_FROM_ADDRESS = 20  # for any emails, from one address
+THROTTLE_WINDOW = timedelta(minutes=15)
+FAILURES_KEPT = timedelta(days=1)
 
 
 class SignInRequired(Exception):
@@ -39,13 +46,20 @@ def get_db(request: Request):
     yield from request.app.state.db_session_scope()
 
 
+def client_address(request: Request) -> str:
+    """The caller's network address. Behind the HTTPS proxy, uvicorn takes it from the proxy's header."""
+    return request.client.host if request.client else "unknown"
+
+
 def current_user_or_none(request: Request, db: Session = Depends(get_db)) -> AppUser | None:
     user_id = request.session.get(SESSION_USER_KEY)
     if user_id is None:
         return None
     user = db.get(AppUser, user_id)
-    if user is None or not user.is_active:
-        request.session.clear()  # deactivated users are signed out on their next click
+    expired = time.time() - request.session.get(SESSION_STARTED_KEY, 0) > SESSION_ABSOLUTE_SECONDS
+    if user is None or not user.is_active or expired or request.session.get(SESSION_VERSION_KEY) != user.session_version:
+        # Deactivated, signed out elsewhere, password or role changed, or simply too old: sign in again.
+        request.session.clear()
         return None
     request.state.user = user  # lets every page show who is signed in
     return user
@@ -92,21 +106,27 @@ async def verify_csrf(request: Request) -> None:
 def start_session(request: Request, user: AppUser) -> None:
     request.session.clear()  # a fresh session on every sign-in
     request.session[SESSION_USER_KEY] = user.id
+    request.session[SESSION_VERSION_KEY] = user.session_version
+    request.session[SESSION_STARTED_KEY] = int(time.time())
 
 
-@dataclass
-class SignInThrottle:
-    """Locks an email address for a while after repeated failed sign-ins."""
+def sign_in_refused(db: Session, email: str, address: str) -> bool:
+    """True while this address has failed too often, for this email or for any."""
+    since = datetime.now(UTC) - THROTTLE_WINDOW
+    failures = select(func.count()).select_from(FailedSignIn).where(FailedSignIn.address == address, FailedSignIn.at >= since)
+    if db.scalar(failures) >= MAX_FAILED_FROM_ADDRESS:
+        return True
+    return db.scalar(failures.where(FailedSignIn.email == email)) >= MAX_FAILED_SIGN_INS
 
-    failures: dict[str, list[float]] = field(default_factory=dict)
 
-    def locked(self, email: str) -> bool:
-        recent = [t for t in self.failures.get(email, []) if time.monotonic() - t < LOCKOUT_SECONDS]
-        self.failures[email] = recent
-        return len(recent) >= MAX_FAILED_SIGN_INS
+def record_failed_sign_in(db: Session, email: str, address: str) -> None:
+    db.execute(delete(FailedSignIn).where(FailedSignIn.at < datetime.now(UTC) - FAILURES_KEPT))
+    db.add(FailedSignIn(email=email[:254], address=address[:45]))
 
-    def record_failure(self, email: str) -> None:
-        self.failures.setdefault(email, []).append(time.monotonic())
 
-    def clear(self, email: str) -> None:
-        self.failures.pop(email, None)
+def clear_failed_sign_ins(db: Session, email: str, address: str | None = None) -> None:
+    """After a successful sign-in from an address, or a password reset (every address)."""
+    query = delete(FailedSignIn).where(FailedSignIn.email == email)
+    if address is not None:
+        query = query.where(FailedSignIn.address == address)
+    db.execute(query)

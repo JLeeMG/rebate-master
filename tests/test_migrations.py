@@ -11,12 +11,12 @@ def test_models_match_migrations(engine, settings):
     command.check(alembic_config(settings.database_url))
 
 
-def test_migrations_run_down_and_up_again(engine, settings):
-    config = alembic_config(settings.database_url)
+def test_migrations_run_down_and_up_again(engine, settings, owner_test_url):
+    config = alembic_config(owner_test_url)  # structure changes are the owner's
     try:
         command.downgrade(config, "base")
         check = create_engine(settings.database_url)
         assert set(inspect(check).get_table_names()) <= {"alembic_version"}
         check.dispose()
     finally:
-        rebuild_test_database(settings.database_url)  # leave it as the other tests expect
+        rebuild_test_database(owner_test_url, settings.database_url)  # leave it as the other tests expect

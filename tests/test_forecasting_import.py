@@ -28,11 +28,13 @@ SOURCE_SCHEMA = "forecasting_stand_in"
 
 
 @pytest.fixture
-def source_url(settings, engine):
+def source_url(owner_test_url, owner_engine):
+    # Built by the database owner: the platform's own account may not create schemas or tables.
+    engine = owner_engine
     with engine.begin() as c:
         c.execute(text(f"DROP SCHEMA IF EXISTS {SOURCE_SCHEMA} CASCADE"))
         c.execute(text(f"CREATE SCHEMA {SOURCE_SCHEMA}"))
-    url = f"{settings.database_url}?options=-csearch_path%3D{SOURCE_SCHEMA}"
+    url = f"{owner_test_url}?options=-csearch_path%3D{SOURCE_SCHEMA}"
     source = create_engine(url)
     Base.metadata.create_all(source)
     with source.begin() as c:

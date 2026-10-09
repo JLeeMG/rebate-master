@@ -147,6 +147,10 @@ class AppUser(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     created_by_id: Mapped[int | None] = mapped_column(ForeignKey("app_user.id"))
     last_sign_in_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # Raised to sign the user out everywhere: sign-out, password change, role change, deactivation.
+    session_version: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    # The permanent Microsoft 365 object id, recorded at the first Microsoft sign-in.
+    entra_object_id: Mapped[str | None] = mapped_column(String(64), unique=True)
 
 
 class AuditEvent(Base):
@@ -159,7 +163,19 @@ class AuditEvent(Base):
     actor_id: Mapped[int | None] = mapped_column(ForeignKey("app_user.id"))
     action: Mapped[str] = mapped_column(String(64))
     subject: Mapped[str] = mapped_column(String(200))
+    address: Mapped[str | None] = mapped_column(String(45))  # network address of the web request; none on the command line
     detail: Mapped[dict] = mapped_column(JSON, default=dict)
+
+
+class FailedSignIn(Base):
+    """A wrong password, kept for a day to slow guessing from one network address (mgrm.web.security)."""
+
+    __tablename__ = "failed_sign_in"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    email: Mapped[str] = mapped_column(String(254), index=True)
+    address: Mapped[str] = mapped_column(String(45), index=True)
+    at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
 # ---------------------------------------------------------------- loads
@@ -410,3 +426,4 @@ class ApiToken(Base):
     created_by_id: Mapped[int | None] = mapped_column(ForeignKey("app_user.id"))
     last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

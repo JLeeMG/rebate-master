@@ -76,9 +76,17 @@ def refused(db, action, match):
 # ---------------------------------------------------------------- four-eyes and history
 
 
-def test_nobody_approves_their_own_rate(db, people, agreement):
-    rate = propose(db, people, agreement, who="admin")
+def test_nobody_approves_their_own_rate(db, people, agreement, make_user):
+    maintainer = make_user(Role.REBATE_MAINTAINER, email="maintainer@example.com")
+    people["maintainer"] = maintainer
+    rate = propose(db, people, agreement, who="maintainer")
     with pytest.raises(RebateError, match="someone else"):
+        approve(db, actor=maintainer, rate=rate)
+
+
+def test_the_administrator_does_not_approve(db, people, agreement):
+    rate = propose(db, people, agreement)
+    with pytest.raises(RebateError, match="does not approve"):
         approve(db, actor=people["admin"], rate=rate)
 
 
@@ -142,7 +150,7 @@ def test_reject_needs_a_reason(db, people, agreement):
 
 
 def test_brand_approvers_take_over_their_brand(db, people, agreement):
-    # Ken approves now. Once EUFY has an assigned approver (its GPM), only they or the administrator may.
+    # Ken approves now. Once EUFY has an assigned approver (its GPM), only they may.
     rate = propose(db, people, agreement)
     with pytest.raises(RebateError, match="not an assigned approver"):
         approve(db, actor=people["gpm"], rate=rate)
@@ -152,6 +160,14 @@ def test_brand_approvers_take_over_their_brand(db, people, agreement):
         approve(db, actor=people["ken"], rate=rate)
     approve(db, actor=people["gpm"], rate=rate)
     assert rate.status is ReviewStatus.APPROVED and rate.reviewed_by_id == people["gpm"].id
+
+
+def test_an_assigned_reviewer_may_approve_their_brand(db, people, agreement):
+    db.add(RebateApproverScope(user_id=people["ken"].id, brand_code="EUFY"))
+    db.flush()
+    rate = propose(db, people, agreement)
+    approve(db, actor=people["ken"], rate=rate)
+    assert rate.status is ReviewStatus.APPROVED
 
 
 def test_expiry_and_renewal(db, people, agreement):

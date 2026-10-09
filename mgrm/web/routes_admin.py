@@ -8,7 +8,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from mgrm.auth.roles import Permission, Role
-from mgrm.api.feed import new_token
+from mgrm.api.feed import TOKEN_LIFETIME, new_token
 from mgrm.auth.users import UserError, audit, change_role, create_user, set_active, set_password
 from mgrm.models import ApiToken, AppUser, AuditEvent, AuthMethod
 from mgrm.web.app import render
@@ -125,7 +125,7 @@ def audit_log(request: Request, actor: AppUser = Depends(admin), db: Session = D
 def _tokens_page(request: Request, db: Session, **context):
     tokens = db.scalars(select(ApiToken).order_by(ApiToken.id.desc())).all()
     names = {u.id: u.display_name for u in db.scalars(select(AppUser))}
-    return render(request, "feed_tokens.html", tokens=tokens, names=names, **context)
+    return render(request, "feed_tokens.html", tokens=tokens, names=names, now=datetime.now(UTC), **context)
 
 
 @router.get("/feed-tokens")
@@ -136,7 +136,8 @@ def feed_tokens(request: Request, actor: AppUser = Depends(admin), db: Session =
 @router.post("/feed-tokens", dependencies=[Depends(verify_csrf)])
 def create_feed_token(request: Request, name: str = Form(...), actor: AppUser = Depends(admin), db: Session = Depends(get_db)):
     token, token_hash = new_token()
-    record = ApiToken(name=name.strip() or "unnamed", token_hash=token_hash, created_by_id=actor.id)
+    record = ApiToken(name=name.strip()[:100] or "unnamed", token_hash=token_hash, created_by_id=actor.id,
+                      expires_at=datetime.now(UTC) + TOKEN_LIFETIME)
     db.add(record)
     db.flush()
     audit(db, actor, "feed.token_create", record.name, token_id=record.id)

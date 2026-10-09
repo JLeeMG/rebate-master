@@ -32,7 +32,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from mgrm.data.errors import AlreadyLoaded, LoadRejected
-from mgrm.data.files import file_sha256
+from mgrm.data.files import file_sha256, workbook_problem
 from mgrm.domain.entities import Entity
 from mgrm.domain.periods import add_months
 from mgrm.models import (
@@ -306,6 +306,9 @@ def parse_workbook(path: Path) -> ParsedWorkbook:
     as_at = date(2000 + int(period.group(1)), int(period.group(2)), 1) if period else None
     if as_at is None:
         problems.append("the file name must carry its month as YYMM, e.g. '2608 Aug 26'")
+    unsafe = workbook_problem(path)
+    if unsafe:
+        problems.append(unsafe)
     if problems:
         return ParsedWorkbook(entity, as_at, [], [], problems)
 

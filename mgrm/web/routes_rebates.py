@@ -34,6 +34,7 @@ from mgrm.models import (
     ReviewStatus,
 )
 from mgrm.rebates.service import (
+    MAX_EVIDENCE_BYTES,
     RebateError,
     Upload,
     agreements_with_rates,
@@ -92,7 +93,8 @@ async def _uploads(files: list[UploadFile] | None, description: str = "") -> lis
     uploads = []
     for file in files or []:
         if file is not None and file.filename:
-            uploads.append(Upload(file.filename, await file.read(), description))
+            # Read one byte past the limit at most: enough for evidence_type to refuse an oversized file.
+            uploads.append(Upload(file.filename, await file.read(MAX_EVIDENCE_BYTES + 1), description))
     return uploads
 
 
@@ -230,6 +232,9 @@ async def add_evidence(
     try:
         if rate is not None and (rate.agreement_id != agreement.id or rate.status is not ReviewStatus.PROPOSED):
             raise RebateError("Evidence can be added only to a rate that is still awaiting review.")
+        if rate is not None and rate.entered_by_id != user.id:
+            raise RebateError("Only the person who proposed this rate can add evidence to it. "
+                              "If you are reviewing it, say what is missing in your review note.")
         uploads = await _uploads(evidence, description)
         if not uploads:
             raise RebateError("Choose a file to attach.")
@@ -452,7 +457,10 @@ async def approve_selected(request: Request, user: AppUser = Depends(approver), 
         return _review_page(request, db, user, 400, error="Tick the box to confirm you have checked each selected rate against its source.")
     approved, problems = 0, []
     for value in form.getlist("rate_id"):
-        rate = db.get(RebateRate, int(value))
+        rate = db.get(RebateRate, int(value)) if isinstance(value, str) and value.isdigit() else None
+        if rate is None:
+            problems.append(f"Rate {value}: it no longer exists.")
+            continue
         try:
             with db.begin_nested():
                 approve(db, actor=user, rate=rate, note="Approved in a batch after checking against the source")
@@ -548,7 +556,8 @@ def rate_card(
 def approvers(request: Request, user: AppUser = Depends(administrator), db: Session = Depends(get_db)):
     scopes = db.scalars(select(RebateApproverScope).order_by(RebateApproverScope.brand_code)).all()
     candidates = db.scalars(select(AppUser).where(
-        AppUser.is_active.is_(True), or_(AppUser.role == Role.BRAND_APPROVER, AppUser.role == Role.REBATE_REVIEWER, AppUser.role == Role.ADMIN)
+        AppUser.is_active.is_(True),
+        or_(AppUser.role == Role.BRAND_APPROVER, AppUser.role == Role.REBATE_REVIEWER, AppUser.role == Role.REBATE_MAINTAINER)
     ).order_by(AppUser.display_name)).all()
     brands = sorted({a.brand_code for a in db.scalars(select(RebateAgreement)) if a.brand_code and a.brand_code != "ALL"})
     return render(request, "rebate_approvers.html", scopes=scopes, candidates=candidates, brands=brands, names=_names(db))

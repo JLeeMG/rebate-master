@@ -14,6 +14,7 @@ from sqlalchemy.orm import Session
 from mgrm.auth.roles import Permission, can
 from mgrm.auth.users import audit
 from mgrm.data.errors import AlreadyLoaded, LoadRejected
+from mgrm.data.files import MAX_UPLOAD_BYTES
 from mgrm.data.rebate_workbooks import load_workbook
 from mgrm.data.registers import LOADERS, FileInput
 from mgrm.domain.entities import TRADING_ENTITIES
@@ -66,8 +67,11 @@ async def upload(
 ):
     if kind not in UPLOAD_KINDS:
         return _loads_page(request, db, 400, error="Choose what kind of file this is.")
-    raw = await upload.read()
+    raw = await upload.read(MAX_UPLOAD_BYTES + 1)
     name = Path(upload.filename or "upload").name
+    if len(raw) > MAX_UPLOAD_BYTES:
+        return _loads_page(request, db, 400, error=f"{name} is larger than {MAX_UPLOAD_BYTES // (1024 * 1024)} MB, "
+                           "far larger than any NetSuite export or reconciliation workbook. Nothing was loaded.")
     try:
         with db.begin_nested():
             if kind == "rebate_workbook":
@@ -107,7 +111,7 @@ def update_brand(
     db: Session = Depends(get_db),
 ):
     brand = db.get(Brand, brand_id)
-    if brand is not None:
+    if brand is not None and tier in {"", *ForecastTier}:
         new_tier = ForecastTier(tier) if tier else None
         if (brand.is_brand, brand.forecast_tier) != (is_brand, new_tier):
             audit(db, user, "brand.update", brand.code, reason=reason.strip(),

@@ -35,7 +35,10 @@ ROLE_TITLES: dict[Role, str] = {
 }
 
 ROLE_DESCRIPTIONS: dict[Role, str] = {
-    Role.ADMIN: "Everything, including users, brand approvers and the feed to the forecasting platform.",
+    Role.ADMIN: (
+        "Everything except approving: users, brand approvers, the feed to the forecasting platform, and entering "
+        "rebate changes for others to approve."
+    ),
     Role.REBATE_MAINTAINER: (
         "Enters agreements, rate changes and agreement changes with their evidence, maintains customers, customer "
         "groups and brands, and approves what others enter. Never approves their own entries."
@@ -64,7 +67,9 @@ class Permission(StrEnum):
 P = Permission
 
 ROLE_PERMISSIONS: dict[Role, frozenset[Permission]] = {
-    Role.ADMIN: frozenset(Permission),
+    # The administrator creates users and resets passwords, so could approve through a second account;
+    # approving is left to the rebate team (CFO decision, 9 October 2026 security audit).
+    Role.ADMIN: frozenset(Permission) - {P.APPROVE_REBATES},
     # Four-eyes holds per person, not per role: nobody approves their own entry (mgrm.rebates.service and the database).
     Role.REBATE_MAINTAINER: frozenset({P.VIEW, P.VIEW_SALES, P.EDIT_REBATES, P.APPROVE_REBATES, P.MANAGE_REGISTERS}),
     Role.REBATE_EDITOR: frozenset({P.VIEW, P.VIEW_SALES, P.EDIT_REBATES, P.MANAGE_REGISTERS}),

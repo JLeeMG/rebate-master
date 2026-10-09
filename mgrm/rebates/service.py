@@ -133,12 +133,10 @@ def review_refusal(session: Session, user: AppUser, item, agreement: RebateAgree
     if item.entered_by_id == user.id:
         return "You entered this, so someone else must review it."
     approvers = assigned_approvers(session, agreement.brand_code)
-    if user.role is Role.ADMIN:
-        return None
-    if user.role is Role.BRAND_APPROVER:
-        return None if user.id in approvers else f"You are not an assigned approver for {agreement.brand_code or 'this brand'}."
     if approvers:
-        return f"{agreement.brand_code} changes are approved by its assigned approvers."
+        return None if user.id in approvers else f"{agreement.brand_code} changes are approved by its assigned approvers."
+    if user.role is Role.BRAND_APPROVER:
+        return f"You are not an assigned approver for {agreement.brand_code or 'this brand'}."
     return None
 
 

@@ -14,7 +14,7 @@ TENANT = "11111111-2222-3333-4444-555555555555"
 
 def test_permission_table_is_as_agreed():
     # Pinned: changing who can do what must be a deliberate edit to this test too.
-    assert ROLE_PERMISSIONS[Role.ADMIN] == frozenset(Permission)
+    assert ROLE_PERMISSIONS[Role.ADMIN] == frozenset(Permission) - {P.APPROVE_REBATES}  # security audit, 9 Oct 2026
     assert ROLE_PERMISSIONS[Role.REBATE_MAINTAINER] == {P.VIEW, P.VIEW_SALES, P.EDIT_REBATES, P.APPROVE_REBATES, P.MANAGE_REGISTERS}
     assert ROLE_PERMISSIONS[Role.REBATE_EDITOR] == {P.VIEW, P.VIEW_SALES, P.EDIT_REBATES, P.MANAGE_REGISTERS}
     assert ROLE_PERMISSIONS[Role.REBATE_REVIEWER] == {P.VIEW, P.VIEW_SALES, P.APPROVE_REBATES}
@@ -42,10 +42,28 @@ def test_passwords():
 
 def test_microsoft_admits_only_registered_microsoft_users(db, make_user):
     ms = make_user(Role.VIEWER, email="ms@macgeargroup.com", auth_method=AuthMethod.MICROSOFT, password=None)
-    claims = {"tid": TENANT, "preferred_username": "MS@macgeargroup.com"}
+    claims = {"tid": TENANT, "oid": "object-1", "preferred_username": "MS@macgeargroup.com"}
     assert resolve_microsoft_user(db, claims, TENANT) is ms
     assert resolve_microsoft_user(db, {**claims, "tid": "another-organisation"}, TENANT) is None
-    assert resolve_microsoft_user(db, {"tid": TENANT, "email": "stranger@macgeargroup.com"}, TENANT) is None
+    assert resolve_microsoft_user(db, {"tid": TENANT, "oid": "object-2", "email": "stranger@macgeargroup.com"}, TENANT) is None
+    assert resolve_microsoft_user(db, {**claims, "oid": None}, TENANT) is None
+
+
+def test_microsoft_recognises_people_by_their_permanent_id(db, make_user):
+    ms = make_user(Role.VIEWER, email="ms@macgeargroup.com", auth_method=AuthMethod.MICROSOFT, password=None)
+    assert resolve_microsoft_user(db, {"tid": TENANT, "oid": "object-1", "email": "ms@macgeargroup.com"}, TENANT) is ms
+    assert ms.entra_object_id == "object-1"
+    # Their address changes in Microsoft 365: still them.
+    assert resolve_microsoft_user(db, {"tid": TENANT, "oid": "object-1", "email": "renamed@macgeargroup.com"}, TENANT) is ms
+    # Someone else later given the old address: not them.
+    assert resolve_microsoft_user(db, {"tid": TENANT, "oid": "object-9", "email": "ms@macgeargroup.com"}, TENANT) is None
+
+
+def test_microsoft_refuses_guests_in_our_directory(db, make_user):
+    make_user(Role.VIEWER, email="partner@example.com", auth_method=AuthMethod.MICROSOFT, password=None)
+    guest = {"tid": TENANT, "oid": "object-3", "email": "partner@example.com"}
+    assert resolve_microsoft_user(db, {**guest, "acct": 1}, TENANT) is None
+    assert resolve_microsoft_user(db, {**guest, "idp": "https://sts.windows.net/another-tenant/"}, TENANT) is None
 
 
 def test_the_last_administrator_cannot_be_removed(db, make_user):

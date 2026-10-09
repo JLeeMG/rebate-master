@@ -6,6 +6,7 @@
   Other systems read customer groups, customers, brands and approved rates from this platform's feed (read-only).
   Each needs a token. The forecasting platform's token goes in its <code>.env</code> as <code>REBATE_MASTER_TOKEN</code>.
   Only a fingerprint of each token is stored, so a token is shown once, when it is created.
+  A token works for a year; before it expires, create a new one, put it in the other system, then revoke the old one.
 </p>
 
 {% if new_token %}
@@ -16,7 +17,7 @@
 {% endif %}
 
 <table>
-  <thead><tr><th>Name</th><th>Created</th><th>By</th><th>Last used</th><th>Status</th><th></th></tr></thead>
+  <thead><tr><th>Name</th><th>Created</th><th>By</th><th>Last used</th><th>Expires</th><th>Status</th><th></th></tr></thead>
   <tbody>
   {% for t in tokens %}
     <tr class="{{ 'inactive' if t.revoked_at else '' }}">
@@ -24,7 +25,8 @@
       <td>{{ t.created_at.strftime("%d %b %Y %H:%M") }}</td>
       <td>{{ names.get(t.created_by_id, "") }}</td>
       <td>{{ t.last_used_at.strftime("%d %b %Y %H:%M") if t.last_used_at else "never" }}</td>
-      <td>{{ "revoked " ~ t.revoked_at.strftime("%d %b %Y") if t.revoked_at else "active" }}</td>
+      <td>{{ t.expires_at.strftime("%d %b %Y") if t.expires_at else "never" }}</td>
+      <td>{{ "revoked " ~ t.revoked_at.strftime("%d %b %Y") if t.revoked_at else ("expired" if t.expires_at and t.expires_at < now else "active") }}</td>
       <td>{% if not t.revoked_at %}
         <form method="post" action="/admin/feed-tokens/{{ t.id }}/revoke" class="inline">
           <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
@@ -32,7 +34,7 @@
         </form>{% endif %}</td>
     </tr>
   {% else %}
-    <tr><td colspan="6" class="muted">No tokens yet.</td></tr>
+    <tr><td colspan="7" class="muted">No tokens yet.</td></tr>
   {% endfor %}
   </tbody>
 </table>

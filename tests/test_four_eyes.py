@@ -122,13 +122,13 @@ def test_each_can_change_and_the_other_approves(db, ken, siobhan):
 
 
 def test_a_change_is_refused_if_the_agreement_moved_since(db, ken, siobhan, make_user):
-    admin = make_user(Role.ADMIN)
+    third = make_user(Role.REBATE_MAINTAINER, email="third@example.com")
     agreement = new_agreement(db, siobhan)
     first = propose_agreement_change(db, actor=ken, agreement=agreement, changes={"product_scope": "EUFY Security"},
                                      reason="narrower", evidence=[])
     second = propose_agreement_change(db, actor=siobhan, agreement=agreement, changes={"product_scope": "EUFY Baby"},
                                       reason="different", evidence=[])
-    approve_change(db, actor=admin, request=first)
+    approve_change(db, actor=third, request=first)
     with pytest.raises(RebateError, match="changed since this was proposed"):
         approve_change(db, actor=ken, request=second)
     reject_change(db, actor=ken, request=second, note="superseded by the narrower scope")

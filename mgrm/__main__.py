@@ -1,6 +1,7 @@
 """Command line: python -m mgrm <command>
 
-    migrate                  bring the database structure up to date
+    migrate                  bring the database structure up to date (runs as the database owner, from .env.owner)
+    check-database           confirm the platform's database account can only work with rows
     reset-password           set a new password for a locked-out user (on this computer only)
     create-admin             add an administrator (first set-up, or recovery if locked out)
     serve                    start the rebate master at http://localhost:8001
@@ -36,21 +37,61 @@ def _user(session, email: str):
     return user
 
 
+def _origin() -> dict:
+    """Who ran a command, for the audit log: the Windows account and the computer."""
+    import socket
+
+    return {"via": "command line", "windows_user": getpass.getuser(), "computer": socket.gethostname()}
+
+
 def migrate(_args) -> int:
     from alembic import command
     from alembic.config import Config
 
-    command.upgrade(Config(str(PROJECT_ROOT / "alembic.ini")), "head")
-    print("Database structure is up to date.")
-    return 0
+    from mgrm.config import get_settings
+    from mgrm.db_roles import app_role, grant_app_privileges, owner_url
+
+    url = owner_url(PROJECT_ROOT)
+    if url is None:
+        print("Database upgrades run as the database owner, whose password is in .env.owner, and there is no "
+              ".env.owner here. Run scripts\\separate_database_owner.ps1 once (see the README), or ask IT.")
+        return 1
+    config = Config(str(PROJECT_ROOT / "alembic.ini"))
+    config.attributes["database_url"] = url
+    command.upgrade(config, "head")
+    grant_app_privileges(url, app_role(get_settings().database_url))
+    print("Database structure is up to date, and the platform's own account has row access only.")
+    return check_database(_args)
+
+
+def check_database(_args) -> int:
+    """Confirms the platform's account cannot alter the structure or the permanent record."""
+    from sqlalchemy import create_engine
+
+    from mgrm.config import get_settings
+    from mgrm.db_roles import privilege_problems
+
+    engine = create_engine(get_settings().database_url)
+    with engine.connect() as connection:
+        problems = privilege_problems(connection)
+    engine.dispose()
+    for problem in problems:
+        print(f"PROBLEM {problem}")
+    print("Database account check: " + ("FAILED" if problems else "passed"))
+    return 1 if problems else 0
 
 
 def create_admin(_args) -> int:
     from mgrm.auth.passwords import password_problem
     from mgrm.auth.roles import Role
-    from mgrm.auth.users import UserError, create_user
+    from mgrm.auth.users import UserError, active_admin_count, audit, create_user
     from mgrm.models import AuthMethod
 
+    with _session_factory()() as session:
+        if active_admin_count(session):
+            print("There is already an active administrator. Add more in the platform under Admin -> Users. "
+                  "If you have forgotten your password, use: python -m mgrm reset-password <your email>")
+            return 1
     email = input("Email: ").strip()
     name = input("Name as shown in the platform: ").strip()
     method = input("Sign in with (1) a platform password or (2) Microsoft 365? [1]: ").strip() or "1"
@@ -74,6 +115,7 @@ def create_admin(_args) -> int:
         except UserError as exc:
             print(f"Not created: {exc}")
             return 1
+        audit(session, None, "user.create_administrator", user.email, **_origin())
     print(f"Administrator {user.email} created.")
     return 0
 
@@ -81,7 +123,15 @@ def create_admin(_args) -> int:
 def serve(args) -> int:
     import uvicorn
 
-    uvicorn.run("mgrm.web.app:create_app", factory=True, host=args.host, port=args.port, reload=args.reload)
+    from mgrm.config import LOCAL_HOSTS, get_settings
+
+    settings = get_settings()
+    if args.host not in LOCAL_HOSTS and not settings.session_https_only:
+        print("Serving to the network needs HTTPS. Leave --host as 127.0.0.1 and put the HTTPS proxy in front "
+              "(see the README, 'Hosting on a server').")
+        return 1
+    uvicorn.run("mgrm.web.app:create_app", factory=True, host=args.host, port=args.port, reload=args.reload,
+                proxy_headers=True, forwarded_allow_ips=settings.trusted_proxies, server_header=False)
     return 0
 
 
@@ -138,12 +188,17 @@ def import_from_forecasting(args) -> int:
 
 
 def reset_password(args) -> int:
-    """For someone locked out: needs access to this computer, which is the proof of identity here."""
+    """For someone locked out. Needs access to the platform's folder on this computer, and records who ran it.
+
+    The password set here is temporary: the person chooses their own at their next sign-in. A switched-off
+    account stays switched off; only an administrator can switch it back on, in the platform.
+    """
     from sqlalchemy import select
 
     from mgrm.auth.passwords import password_problem
     from mgrm.auth.users import UserError, audit, set_password
     from mgrm.models import AppUser, AuthMethod
+    from mgrm.web.security import clear_failed_sign_ins
 
     with _session_factory().begin() as session:
         user = session.scalar(select(AppUser).where(AppUser.email == args.email.strip().lower()))
@@ -164,15 +219,16 @@ def reset_password(args) -> int:
                 continue
             break
         try:
-            set_password(session, actor=user, user=user, password=password)
+            set_password(session, actor=None, user=user, password=password)
         except UserError as exc:
             print(f"Not changed: {exc}")
             return 1
-        if not user.is_active:
-            user.is_active = True
-            audit(session, user, "user.activate", user.email, via="command line password reset")
-        audit(session, user, "user.reset_password", user.email, via="command line on this computer")
-    print(f"Password changed for {user.email}. Sign in with it now.")
+        clear_failed_sign_ins(session, user.email)
+        audit(session, None, "user.reset_password", user.email, **_origin())
+        active = user.is_active
+    print(f"Password changed for {user.email}. Sign in with it; you will then be asked to choose your own.")
+    if not active:
+        print("This account is switched off. An administrator must switch it back on under Admin -> Users.")
     return 0
 
 
@@ -180,6 +236,8 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="python -m mgrm", description="MacGear Rebate Master")
     sub = parser.add_subparsers(dest="command", required=True)
     sub.add_parser("migrate", help="bring the database structure up to date").set_defaults(fn=migrate)
+    sub.add_parser("check-database", help="confirm the platform's database account has row access only"
+                   ).set_defaults(fn=check_database)
     sub.add_parser("create-admin", help="add an administrator").set_defaults(fn=create_admin)
     serve_parser = sub.add_parser("serve", help="start the rebate master")
     serve_parser.add_argument("--host", default="127.0.0.1", help="127.0.0.1 keeps it on this computer only")

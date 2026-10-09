@@ -3,6 +3,10 @@
 Database tests run against TEST_DATABASE_URL, which is wiped and rebuilt from
 the migrations at the start of every run. The live database is never touched:
 the suite refuses to start unless the test database name ends in _test.
+
+As in live use, the structure is built by the database owner
+(TEST_OWNER_DATABASE_URL in .env.owner) and the tests run as the platform's
+own account, which can only work with rows.
 """
 
 import re
@@ -18,6 +22,7 @@ from sqlalchemy.orm import Session
 from mgrm.auth.roles import Role
 from mgrm.auth.users import create_user
 from mgrm.config import Settings
+from mgrm.db_roles import app_role, grant_app_privileges, owner_url
 from mgrm.models import AuthMethod
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
@@ -42,21 +47,40 @@ def alembic_config(url: str) -> Config:
     return config
 
 
-def rebuild_test_database(url: str) -> None:
-    engine = create_engine(url)
+@pytest.fixture(scope="session")
+def owner_test_url(settings) -> str:
+    url = owner_url(PROJECT_ROOT, test=True)
+    if not url:
+        pytest.exit("TEST_OWNER_DATABASE_URL is not set in .env.owner; run scripts/separate_database_owner.ps1", returncode=2)
+    if make_url(url).database != make_url(settings.database_url).database:
+        pytest.exit("TEST_OWNER_DATABASE_URL must name the test database", returncode=2)
+    return url
+
+
+def rebuild_test_database(owner: str, app_url: str) -> None:
+    engine = create_engine(owner)
     with engine.begin() as connection:
         connection.execute(text("DROP SCHEMA public CASCADE"))
         connection.execute(text("CREATE SCHEMA public"))
     engine.dispose()
-    command.upgrade(alembic_config(url), "head")
+    command.upgrade(alembic_config(owner), "head")
+    grant_app_privileges(owner, app_role(app_url))
 
 
 @pytest.fixture(scope="session")
-def engine(settings):
-    rebuild_test_database(settings.database_url)
+def engine(settings, owner_test_url):
+    rebuild_test_database(owner_test_url, settings.database_url)
     engine = create_engine(settings.database_url)
     yield engine
     engine.dispose()
+
+
+@pytest.fixture(scope="session")
+def owner_engine(engine, owner_test_url):
+    """The database owner, for tests that set up what the platform's own account may not."""
+    owner = create_engine(owner_test_url)
+    yield owner
+    owner.dispose()
 
 
 @pytest.fixture
@@ -87,7 +111,7 @@ def app(settings, db):
 
 @pytest.fixture
 def client(app):
-    with TestClient(app) as client:
+    with TestClient(app, base_url="http://localhost") as client:
         yield client
 
 

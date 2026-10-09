@@ -62,3 +62,7 @@ pre.notes { white-space: pre-wrap; font: inherit; background: var(--panel); padd
   main { padding: 16px; }
   table { display: block; overflow-x: auto; }
 }
+
+/* Inline styles are not allowed (content security policy), so small layout tweaks live here. */
+input.tick { display: inline; width: auto; }
+label.inline-label { display: inline; }

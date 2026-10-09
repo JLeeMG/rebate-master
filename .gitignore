@@ -23,3 +23,13 @@ inputs/
 *.pdf
 *.msg
 *.eml
+
+# Database backups, dumps and logs stay on this computer
+backups/
+*.dump
+*.backup
+*.sql
+*.log
+
+# Security audit reports stay off GitHub
+docs/security-audit*
