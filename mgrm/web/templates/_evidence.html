@@ -1,0 +1,2 @@
+{# One evidence file as a link, with its fingerprint. Expects `f` (id, file_name, sha256 optional). #}
+<div class="evidence"><a href="/rebates/evidence/{{ f.id }}">{{ f.file_name }}</a>{% if f.sha256 is defined and f.sha256 %} <span class="muted" title="SHA-256 fingerprint taken on upload">{{ f.sha256[:12] }}</span>{% endif %}</div>

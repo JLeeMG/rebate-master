@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+{% block title %}Brands · {{ APP_NAME }}{% endblock %}
+{% block content %}
+<h1>Brands</h1>
+<p class="muted">
+  One row per NetSuite class. Not every class is a brand (3PL, for one): a new class arrives <strong>not a brand</strong> until someone marks it.
+  Tier decides how the forecasting platform forecasts it: <em>strategic</em> from the sales team's file, <em>tail</em> from its own trend, <em>pre-revenue</em> in a separately labelled block.
+  This list is the master; the forecasting platform reads it.
+</p>
+{% set can_edit = can(user.role, Permission.MANAGE_REGISTERS) %}
+<table>
+  <thead><tr><th>Class</th><th>Code</th><th class="num">NetSuite ID</th><th>Brand?</th><th>Tier</th>{% if can_edit %}<th>Reason for a change</th><th></th>{% endif %}</tr></thead>
+  <tbody>
+  {% for b in brands %}
+    <tr class="{{ 'inactive' if b.is_inactive else '' }}">
+      <td>{{ b.name }}{% if b.is_inactive %} <span class="tag">inactive in NetSuite</span>{% endif %}</td>
+      <td>{{ b.code }}</td>
+      <td class="num">{{ b.netsuite_class_id or "" }}</td>
+      {% if can_edit %}
+        <td><input form="brand-{{ b.id }}" type="checkbox" name="is_brand" value="true" {{ "checked" if b.is_brand }} aria-label="{{ b.name }} is a brand"></td>
+        <td>
+          <select form="brand-{{ b.id }}" name="tier" aria-label="Tier for {{ b.name }}">
+            <option value="">none</option>
+            {% for t in tiers %}<option value="{{ t.value }}" {{ "selected" if b.forecast_tier == t }}>{{ t.value.replace("_", "-") }}</option>{% endfor %}
+          </select>
+        </td>
+        <td><input form="brand-{{ b.id }}" name="reason" aria-label="Reason for changing {{ b.name }}"></td>
+        <td>
+          <form id="brand-{{ b.id }}" method="post" action="/brands/{{ b.id }}" class="inline">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <button type="submit">Save</button>
+          </form>
+        </td>
+      {% else %}
+        <td>{{ "yes" if b.is_brand else "no" }}</td>
+        <td>{{ b.forecast_tier.value.replace("_", "-") if b.forecast_tier else "" }}</td>
+      {% endif %}
+    </tr>
+  {% else %}
+    <tr><td colspan="7" class="muted">No classes loaded yet. Load the class register under Load data.</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% endblock %}

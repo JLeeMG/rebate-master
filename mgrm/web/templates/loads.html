@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{% block title %}Load data · {{ APP_NAME }}{% endblock %}
+{% block content %}
+<h1>Load data</h1>
+
+{% if rejected %}
+<div class="error" role="alert">
+  <p><strong>{{ rejected.source }} was not loaded.</strong> Nothing from it was saved. Every problem found:</p>
+  <ol>{% for p in rejected.problems %}<li>{{ p }}</li>{% endfor %}</ol>
+</div>
+{% endif %}
+
+<form method="post" action="/loads" enctype="multipart/form-data" class="narrow">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  <label>What is this file?
+    <select name="kind" required>
+      <option value="">Choose...</option>
+      {% for value, label in kinds.items() %}<option value="{{ value }}">{{ label }}</option>{% endfor %}
+    </select>
+  </label>
+  <label>File <input type="file" name="upload" required accept=".csv,.xlsx"></label>
+  <button type="submit">Load</button>
+</form>
+<p class="muted">
+  NetSuite registers: open the saved search (MGFP Register - Customers, or MGFP Register - Classes), then Export &rarr; CSV.
+  A file is checked in full before anything is saved. Loading never undoes a customer's group or a brand's settings.
+</p>
+
+<h2>Recent loads</h2>
+<table>
+  <thead><tr><th>#</th><th>When (UTC)</th><th>What</th><th>File</th><th class="num">Rows</th><th>Notes</th></tr></thead>
+  <tbody>
+  {% for b in batches %}
+    <tr>
+      <td>{{ b.id }}</td>
+      <td>{{ b.loaded_at.strftime("%d %b %Y %H:%M") }}</td>
+      <td>{{ kinds.get(b.kind.value, b.kind.value.replace("_", " ")) }}</td>
+      <td>{{ b.file_name }}</td>
+      <td class="num">{{ b.row_count }}</td>
+      <td>
+        {% if b.summary.get("new_classes") %}{{ b.summary.new_classes }} new classes (not brands until marked){% endif %}
+        {% if b.summary.get("new_customers") %}{{ b.summary.new_customers }} new customers (no group yet){% endif %}
+        {% if b.summary.get("agreements") %}{{ b.summary.agreements }} agreements, {{ b.summary.proposed_rates }} proposed rates{% endif %}
+      </td>
+    </tr>
+  {% else %}
+    <tr><td colspan="6" class="muted">Nothing loaded yet.</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% endblock %}

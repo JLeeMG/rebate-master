@@ -1,0 +1,119 @@
+{% extends "base.html" %}
+{% block title %}{{ agreement.customer_label }} · {{ APP_NAME }}{% endblock %}
+{% block content %}
+<h1>{{ agreement.customer_label }} &middot; {{ agreement.product_scope }}</h1>
+{% include "_rebate_nav.html" %}
+<p class="muted">{{ agreement.entity_code }} &middot; {{ agreement.rate_type.value }} &middot; basis: {{ agreement.basis.value.replace("_", " ") }}
+  {% if agreement.accrual_mode.value == "check_only" %}&middot; <strong>check only: not accrued</strong>{% endif %}
+  &middot; group {{ agreement.customer_group_code or "none" }} &middot; agreement {{ agreement.code }}</p>
+<p class="muted">Source: {{ agreement.source_reference }}</p>
+
+<h2>Rates</h2>
+<table>
+  <thead><tr><th class="num">Rate</th><th>From</th><th>To</th><th>Status</th><th>Entered by</th><th>Reason and source</th><th>Evidence</th><th>Reviewed by</th><th>For the reviewer</th></tr></thead>
+  <tbody>
+  {% for r in rates %}
+    <tr class="{{ 'inactive' if r.status.value == 'rejected' else '' }}">
+      <td class="num">{{ pct(r.rate) }}</td>
+      <td>{{ r.effective_from.strftime("%d %b %Y") }}</td>
+      <td>{{ r.effective_to.strftime("%d %b %Y") if r.effective_to else "open" }}</td>
+      <td class="{{ {'approved': 'ok', 'rejected': 'bad'}.get(r.status.value, '') }}">{{ r.status.value }}</td>
+      <td>{{ names.get(r.entered_by_id, "") }}<div class="muted">{{ r.entered_at.strftime("%d %b %Y %H:%M") }}</div></td>
+      <td>{{ r.reason }}<div class="muted">{{ r.source_reference }}</div></td>
+      <td>{% for f in evidence.get(r.id, []) %}{% include "_evidence.html" %}{% else %}<span class="muted">none</span>{% endfor %}</td>
+      <td>{{ names.get(r.reviewed_by_id, "") }}{% if r.reviewed_at %}<div class="muted">{{ r.reviewed_at.strftime("%d %b %Y %H:%M") }}</div>{% endif %}{% if r.review_note %}<div>{{ r.review_note }}</div>{% endif %}</td>
+      <td>{% for f in r.load_flags %}<div>{{ f }}</div>{% endfor %}</td>
+    </tr>
+  {% else %}
+    <tr><td colspan="9" class="muted">No rates yet.</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% if can(user.role, Permission.APPROVE_REBATES) %}<p><a href="/rebates/review">Go to the review queue</a> to approve or reject proposed rates.</p>{% endif %}
+
+{% if agreement_evidence %}
+<h2>Evidence for the agreement</h2>
+{% for f in agreement_evidence %}{% include "_evidence.html" %}{% endfor %}
+{% endif %}
+
+{% if can(user.role, Permission.EDIT_REBATES) %}
+<h2>Propose a rate change</h2>
+<p class="muted">The current rate stays in force until someone else approves this. On approval, the rate it replaces is closed the day before this one starts; nothing is overwritten. A reason and the evidence are required.</p>
+<form method="post" action="/rebates/agreement/{{ agreement.id }}/rates" enctype="multipart/form-data" class="grid">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  <label>Rate (%) <input name="rate_percent" required inputmode="decimal" placeholder="e.g. 25.3"></label>
+  <label>From <input type="date" name="effective_from" required></label>
+  <label>To (blank if open) <input type="date" name="effective_to"></label>
+  <label>Reason for the change <input name="reason" required placeholder="e.g. FY27 trading terms renewal"></label>
+  <label>Source <input name="source_reference" required placeholder="e.g. Email from NLG category manager, 14 Aug 2026"></label>
+  <label>Evidence (PDF, .msg, .eml or picture; up to 20 MB each) <input type="file" name="evidence" multiple required accept=".pdf,.msg,.eml,.png,.jpg,.jpeg"></label>
+  <button type="submit">Propose</button>
+</form>
+
+{% set proposed = rates|selectattr("status.value", "equalto", "proposed")|list %}
+<h2>Add evidence</h2>
+<form method="post" action="/rebates/agreement/{{ agreement.id }}/evidence" enctype="multipart/form-data" class="grid">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  <label>For
+    <select name="rate_id">
+      <option value="">the agreement in general</option>
+      {% for r in proposed %}<option value="{{ r.id }}">the proposed {{ pct(r.rate) }} from {{ r.effective_from.strftime("%b %Y") }}</option>{% endfor %}
+    </select>
+  </label>
+  <label>What it is <input name="description" placeholder="e.g. signed trading terms"></label>
+  <label>File <input type="file" name="evidence" multiple required accept=".pdf,.msg,.eml,.png,.jpg,.jpeg"></label>
+  <button type="submit">Attach</button>
+</form>
+
+<h2>Agreement details</h2>
+<form method="post" action="/rebates/agreement/{{ agreement.id }}" enctype="multipart/form-data" class="grid">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  <label>Customer group
+    <select name="customer_group_code"><option value="">none</option>{% for g in groups %}<option value="{{ g.code }}" {{ "selected" if agreement.customer_group_code == g.code }}>{{ g.name }}</option>{% endfor %}</select>
+  </label>
+  <label>Brand code (or ALL) <input name="brand_code" value="{{ agreement.brand_code or '' }}"></label>
+  <label>Products covered <input name="product_scope" value="{{ agreement.product_scope }}" required></label>
+  <label>Type <select name="rate_type">{% for t in rate_types %}<option value="{{ t.value }}" {{ "selected" if agreement.rate_type == t }}>{{ t.value }}</option>{% endfor %}</select></label>
+  <label>Basis <select name="basis">{% for b in bases %}<option value="{{ b.value }}" {{ "selected" if agreement.basis == b }}>{{ b.value.replace("_", " ") }}</option>{% endfor %}</select></label>
+  <label>Accrued? <select name="accrual_mode">{% for m in modes %}<option value="{{ m.value }}" {{ "selected" if agreement.accrual_mode == m }}>{{ "accrued" if m.value == "accrue" else "check only" }}</option>{% endfor %}</select></label>
+  <label>Agreed by <input name="agreed_by" value="{{ agreement.agreed_by }}"></label>
+  <label>Reason for the change <input name="reason" placeholder="required if anything changes"></label>
+  <label>Evidence (optional) <input type="file" name="evidence" multiple accept=".pdf,.msg,.eml,.png,.jpg,.jpeg"></label>
+  <button type="submit">Save details</button>
+</form>
+{% endif %}
+
+{% if agreement.notes %}
+<h2>Notes carried from the workbook</h2>
+<pre class="notes">{{ agreement.notes }}</pre>
+{% endif %}
+
+{% if history %}
+<h2>What the legacy workbook recorded (latest {{ history|length }} months)</h2>
+<table>
+  <thead><tr><th>Month</th>{% if show_money %}<th class="num">Sales</th><th class="num">Rebate due</th>{% endif %}<th class="num">Rate applied</th></tr></thead>
+  <tbody>
+  {% for h in history %}
+    <tr>
+      <td>{{ h.period.strftime("%b %Y") }}</td>
+      {% if show_money %}<td class="num">{{ money(h.sales) }}</td><td class="num">{{ money(h.rebate_due) }}</td>{% endif %}
+      <td class="num">{{ applied(h) }}</td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% endif %}
+
+<h2>Change log for this agreement</h2>
+<table>
+  <thead><tr><th>When (UTC)</th><th>Who</th><th>What</th><th>Detail</th></tr></thead>
+  <tbody>
+  {% for e in events %}
+    <tr><td>{{ e.occurred_at.strftime("%d %b %Y %H:%M") }}</td><td>{{ names.get(e.actor_id, "") }}</td><td>{{ e.action.replace("rebate.", "").replace("_", " ") }}</td>
+        <td>{% for k, v in e.detail.items() %}{{ k.replace("_", " ") }}: {{ v }}{% if not loop.last %}; {% endif %}{% endfor %}</td></tr>
+  {% else %}
+    <tr><td colspan="4" class="muted">No changes since it was loaded.</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% endblock %}

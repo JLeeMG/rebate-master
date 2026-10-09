@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{% block title %}Change log · {{ APP_NAME }}{% endblock %}
+{% block content %}
+<h1>Change log</h1>
+{% include "_rebate_nav.html" %}
+<p class="muted">Every rate change and agreement change, newest first: who did it, when, what changed, the reason, the evidence, and who approved or rejected it. Entries are never edited or removed.</p>
+
+<form method="get" action="/rebates/change-log" class="grid">
+  <label>Entity <select name="entity"><option value="">Both</option>{% for e in entities %}<option value="{{ e.value }}" {{ "selected" if entity == e.value }}>{{ e.value }}</option>{% endfor %}</select></label>
+  <label>Customer, brand or product <input name="search" value="{{ search }}"></label>
+  <label>Person <select name="person"><option value="">Anyone</option>{% for id, name in people %}<option value="{{ id }}" {{ "selected" if person == id|string }}>{{ name }}</option>{% endfor %}</select></label>
+  <label>Since <input type="date" name="since" value="{{ since }}"></label>
+  <button type="submit">Show</button>
+</form>
+
+<table>
+  <thead><tr><th>When (UTC)</th><th>Who</th><th>Agreement</th><th>What</th><th>Rate</th><th>Why</th><th>Evidence</th></tr></thead>
+  <tbody>
+  {% for e, a in rows %}
+    {% set d = e.detail %}
+    <tr>
+      <td>{{ e.occurred_at.strftime("%d %b %Y %H:%M") }}</td>
+      <td>{{ names.get(e.actor_id, "system") }}</td>
+      <td><a href="/rebates/agreement/{{ a.id }}">{{ a.entity_code }} &middot; {{ a.customer_label }}</a><div class="muted">{{ a.product_scope }}</div></td>
+      <td>
+        {% if e.action == "rebate.propose" %}Proposed a rate
+        {% elif e.action == "rebate.approve" %}<span class="ok">Approved</span>
+        {% elif e.action == "rebate.reject" %}<span class="bad">Rejected</span>
+        {% elif e.action == "rebate.agreement_update" %}Changed the agreement
+        {% elif e.action == "rebate.evidence" %}Attached evidence
+        {% endif %}
+      </td>
+      <td>
+        {% if e.action == "rebate.propose" %}{{ pct(d.previous_rate) if d.previous_rate else "none" }} &rarr; <strong>{{ pct(d.rate) }}</strong> from {{ d.effective_from }}{% if d.effective_to %} to {{ d.effective_to }}{% endif %}
+        {% elif e.action in ("rebate.approve", "rebate.reject") %}{{ pct(d.rate) }}{% if d.effective_from %} from {{ d.effective_from }}{% endif %}
+        {% elif e.action == "rebate.agreement_update" %}{% for k, v in d.changes.items() %}<div>{{ k.replace("_", " ") }}: {{ v[0] }} &rarr; {{ v[1] }}</div>{% endfor %}
+        {% endif %}
+      </td>
+      <td>{{ d.reason or d.note or "" }}{% if d.source %}<div class="muted">{{ d.source }}</div>{% endif %}</td>
+      <td>
+        {% if e.action == "rebate.evidence" %}<div class="evidence"><a href="/rebates/evidence/{{ d.evidence_id }}">{{ d.file }}</a> <span class="muted">{{ d.sha256[:12] }}</span></div>
+        {% elif d.rate_id %}{% for f in evidence.get(d.rate_id, []) %}{% include "_evidence.html" %}{% endfor %}{% endif %}
+      </td>
+    </tr>
+  {% else %}
+    <tr><td colspan="7" class="muted">No changes match.</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% if rows|length >= limit %}<p class="muted">Showing the latest {{ limit }}. Narrow the filters to see earlier changes.</p>{% endif %}
+{% endblock %}

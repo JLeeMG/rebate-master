@@ -1,0 +1,73 @@
+{% extends "base.html" %}
+{% block title %}Users · {{ APP_NAME }}{% endblock %}
+{% block content %}
+<h1>Users</h1>
+
+<table>
+  <thead>
+    <tr><th>Name</th><th>Email</th><th>Sign-in</th><th>Role</th><th>Status</th><th>Last sign-in</th><th>Reset password</th></tr>
+  </thead>
+  <tbody>
+  {% for u in users %}
+    <tr class="{{ '' if u.is_active else 'inactive' }}">
+      <td>{{ u.display_name }}{% if u.id == user.id %} (you){% endif %}</td>
+      <td>{{ u.email }}</td>
+      <td>{{ "Microsoft 365" if u.auth_method.value == "microsoft" else "Platform password" }}</td>
+      <td>
+        <form method="post" action="/admin/users/{{ u.id }}/role" class="inline">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <select name="role" aria-label="Role for {{ u.display_name }}">
+            {% for r in roles %}<option value="{{ r.value }}" {{ "selected" if r == u.role }}>{{ r.title }}</option>{% endfor %}
+          </select>
+          <button type="submit">Save</button>
+        </form>
+      </td>
+      <td>
+        <form method="post" action="/admin/users/{{ u.id }}/active" class="inline">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <input type="hidden" name="active" value="{{ 'false' if u.is_active else 'true' }}">
+          {{ "Active" if u.is_active else "No access" }}
+          <button type="submit">{{ "Remove access" if u.is_active else "Restore access" }}</button>
+        </form>
+      </td>
+      <td>{{ u.last_sign_in_at.strftime("%d %b %Y %H:%M") if u.last_sign_in_at else "never" }}</td>
+      <td>
+        {% if u.auth_method.value == "local" %}
+        <form method="post" action="/admin/users/{{ u.id }}/password" class="inline">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <input type="password" name="password" minlength="12" required placeholder="New temporary password" aria-label="New password for {{ u.display_name }}" autocomplete="new-password">
+          <button type="submit">Reset</button>
+        </form>
+        {% else %}<span class="muted">Managed by Microsoft</span>{% endif %}
+      </td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+
+<h2>Add a person</h2>
+<form method="post" action="/admin/users" class="grid">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  <label>Name <input name="display_name" required></label>
+  <label>Work email <input type="email" name="email" required></label>
+  <label>Role
+    <select name="role">{% for r in roles %}<option value="{{ r.value }}" {{ "selected" if r.value == "viewer" }}>{{ r.title }}</option>{% endfor %}</select>
+  </label>
+  <label>Signs in with
+    <select name="auth_method">
+      <option value="local">Platform password</option>
+      <option value="microsoft">Microsoft 365{% if not microsoft_enabled %} (not switched on yet){% endif %}</option>
+    </select>
+  </label>
+  <label>Temporary password (platform password only, at least 12 characters)
+    <input type="password" name="password" minlength="12" autocomplete="new-password">
+  </label>
+  <button type="submit">Add</button>
+</form>
+
+<h2>What each role can do</h2>
+<table>
+  <thead><tr><th>Role</th><th>Can do</th></tr></thead>
+  <tbody>{% for r in roles %}<tr><td>{{ r.title }}</td><td>{{ ROLE_DESCRIPTIONS[r] }}</td></tr>{% endfor %}</tbody>
+</table>
+{% endblock %}

@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+{% block title %}Rebate master · {{ APP_NAME }}{% endblock %}
+{% block content %}
+<h1>Rebate master</h1>
+{% include "_rebate_nav.html" %}
+<p class="muted">Every customer rebate agreement, by entity, customer group and brand. A rate is used only once someone other than the person who entered it has approved it.</p>
+{% if any_pending and can(user.role, Permission.APPROVE_REBATES) %}<p class="notice">There are rates waiting for review. <a href="/rebates/review">Review them</a>.</p>{% endif %}
+
+<form method="get" action="/rebates" class="grid">
+  <label>Entity <select name="entity"><option value="">Both</option>{% for e in entities %}<option value="{{ e.value }}" {{ "selected" if entity == e.value }}>{{ e.value }}</option>{% endfor %}</select></label>
+  <label>Customer group <select name="group"><option value="">All</option>{% for g in groups %}<option value="{{ g.code }}" {{ "selected" if group == g.code }}>{{ g.name }}</option>{% endfor %}</select></label>
+  <label>Search <input name="search" value="{{ search }}" placeholder="customer, brand or product"></label>
+  <label>Show
+    <select name="show">
+      <option value="active" {{ "selected" if show == "active" }}>In force or awaiting review</option>
+      <option value="pending" {{ "selected" if show == "pending" }}>Awaiting review only</option>
+      <option value="ungrouped" {{ "selected" if show == "ungrouped" }}>No customer group yet</option>
+      <option value="all" {{ "selected" if show == "all" }}>All, including ended</option>
+    </select>
+  </label>
+  <button type="submit">Show</button>
+</form>
+
+<p class="muted">{{ rows|length }} agreements. Rates in force on {{ today.strftime("%d %b %Y") }}.</p>
+<table>
+  <thead><tr><th>Entity</th><th>Customer</th><th>Group</th><th>Brand / products</th><th>Type</th><th class="num">Rate in force</th><th>Since</th><th>Awaiting review</th></tr></thead>
+  <tbody>
+  {% for r in rows %}
+    <tr>
+      <td>{{ r.agreement.entity_code }}</td>
+      <td><a href="/rebates/agreement/{{ r.agreement.id }}">{{ r.agreement.customer_label }}</a></td>
+      <td>{{ r.agreement.customer_group_code or "" }}{% if not r.agreement.customer_group_code %}<span class="tag">none</span>{% endif %}</td>
+      <td>{{ r.agreement.product_scope }}{% if r.agreement.brand_code and r.agreement.brand_code != "ALL" %} <span class="tag">{{ r.agreement.brand_code }}</span>{% endif %}</td>
+      <td>{{ r.agreement.rate_type.value }}{% if r.agreement.accrual_mode.value == "check_only" %} <span class="tag">check only</span>{% endif %}</td>
+      <td class="num">{{ pct(r.rate.rate) if r.rate else "none approved" }}</td>
+      <td>{{ r.rate.effective_from.strftime("%b %Y") if r.rate else "" }}</td>
+      <td>{{ r.pending or "" }}</td>
+    </tr>
+  {% else %}
+    <tr><td colspan="8" class="muted">No agreements match. If none are loaded yet, load the rebate reconciliation workbooks under Load data.</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% endblock %}

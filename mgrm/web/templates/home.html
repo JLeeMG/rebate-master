@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Welcome, {{ user.display_name }}</h1>
+<p class="muted">You are signed in as <strong>{{ user.role.title }}</strong>: {{ ROLE_DESCRIPTIONS[user.role] }}</p>
+
+<div class="cards">
+  <a class="card" href="/rebates">
+    <h2>Agreements</h2>
+    <p>{{ agreements }} customer rebate agreements by entity, customer group and brand, with each rate's history.</p>
+  </a>
+  {% if can(user.role, Permission.APPROVE_REBATES) %}
+  <a class="card" href="/rebates/review">
+    <h2>Review rates</h2>
+    <p>{{ pending }} rate change{{ "" if pending == 1 else "s" }} waiting for review.</p>
+  </a>
+  {% endif %}
+  <a class="card" href="/rebates/change-log">
+    <h2>Change log</h2>
+    <p>Every rate change: who, when, the old and new rate, the reason, the evidence and who approved it.</p>
+  </a>
+  <a class="card" href="/rebates/rate-card">
+    <h2>Rate cards</h2>
+    <p>Approved rates by customer group or by brand, as at any date.</p>
+  </a>
+</div>
+{% endblock %}

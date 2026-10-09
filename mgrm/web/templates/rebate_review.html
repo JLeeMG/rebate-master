@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+{% block title %}Review rates · {{ APP_NAME }}{% endblock %}
+{% block content %}
+<h1>Rates awaiting review</h1>
+{% include "_rebate_nav.html" %}
+<p class="muted">A wrong rate here is wrong everywhere downstream. Open the evidence and check each rate against it before approving. You cannot approve a rate you entered.</p>
+
+<form method="post" action="/rebates/review/approve-selected" id="batch">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+</form>
+
+<table>
+  <thead><tr><th></th><th>Agreement</th><th class="num">Rate</th><th>From</th><th>To</th><th>Entered by</th><th>Reason and source</th><th>Evidence</th><th>Flags</th><th>Decision</th></tr></thead>
+  <tbody>
+  {% for r, a, refusal in items %}
+    <tr>
+      <td>{% if not refusal %}<input form="batch" type="checkbox" name="rate_id" value="{{ r.id }}" aria-label="Select rate {{ r.id }}">{% endif %}</td>
+      <td><a href="/rebates/agreement/{{ a.id }}">{{ a.entity_code }} &middot; {{ a.customer_label }}</a><div class="muted">{{ a.product_scope }} &middot; {{ a.rate_type.value }}{% if a.accrual_mode.value == "check_only" %} &middot; check only{% endif %}</div></td>
+      <td class="num">{{ pct(r.rate) }}</td>
+      <td>{{ r.effective_from.strftime("%b %Y") }}</td>
+      <td>{{ r.effective_to.strftime("%b %Y") if r.effective_to else "open" }}</td>
+      <td>{{ names.get(r.entered_by_id, "") }}</td>
+      <td>{{ r.reason }}<div class="muted">{{ r.source_reference }}</div></td>
+      <td>{% for f in evidence.get(r.id, []) %}{% include "_evidence.html" %}{% else %}<span class="muted">none</span>{% endfor %}</td>
+      <td>{% for f in r.load_flags %}<div>{{ f }}</div>{% endfor %}</td>
+      <td>
+        {% if refusal %}<span class="muted">{{ refusal }}</span>
+        {% else %}
+        <form method="post" action="/rebates/rates/{{ r.id }}/decision" class="inline">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <input name="note" placeholder="Note (required to reject)" aria-label="Note for rate {{ r.id }}">
+          <button type="submit" name="decision" value="approve">Approve</button>
+          <button type="submit" name="decision" value="reject" class="secondary">Reject</button>
+        </form>
+        {% endif %}
+      </td>
+    </tr>
+  {% else %}
+    <tr><td colspan="10" class="muted">Nothing is waiting for review.</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+
+{% if items %}
+<p>
+  <label style="display:inline"><input form="batch" type="checkbox" name="checked" value="yes" style="display:inline;width:auto"> I have checked each selected rate against its source.</label>
+  <button form="batch" type="submit">Approve selected</button>
+</p>
+{% endif %}
+{% endblock %}

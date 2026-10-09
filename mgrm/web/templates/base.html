@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en-AU">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}{{ APP_NAME }}{% endblock %}</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<header class="bar">
+  <a class="brand" href="/">{{ APP_NAME }}</a>
+  {% if user %}
+  <nav>
+    <a href="/rebates">Agreements</a>
+    {% if can(user.role, Permission.APPROVE_REBATES) %}<a href="/rebates/review">Review rates</a>{% endif %}
+    <a href="/rebates/change-log">Change log</a>
+    <a href="/rebates/rate-card">Rate cards</a>
+    <a href="/customers">Customers</a>
+    <a href="/brands">Brands</a>
+    {% if can(user.role, Permission.MANAGE_REGISTERS) %}<a href="/loads">Load data</a>{% endif %}
+    {% if can(user.role, Permission.MANAGE_USERS) %}<a href="/admin/users">Users</a><a href="/admin/audit">Audit log</a><a href="/admin/feed-tokens">Feed tokens</a>{% endif %}
+  </nav>
+  <div class="who">
+    {{ user.display_name }} &middot; {{ user.role.title }}
+    {% if user.auth_method.value == "local" %}&middot; <a href="/account/password">Password</a>{% endif %}
+    <form method="post" action="/logout" class="inline">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <button type="submit" class="link">Sign out</button>
+    </form>
+  </div>
+  {% endif %}
+</header>
+<main>
+  {% if error %}<p class="error" role="alert">{{ error }}</p>{% endif %}
+  {% if notice %}<p class="notice" role="status">{{ notice }}</p>{% endif %}
+  {% block content %}{% endblock %}
+</main>
+</body>
+</html>

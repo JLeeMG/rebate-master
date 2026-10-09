@@ -1,0 +1,84 @@
+{% extends "base.html" %}
+{% block title %}Customers · {{ APP_NAME }}{% endblock %}
+{% block content %}
+<h1>Customers and customer groups</h1>
+<p class="muted">
+  Every NetSuite customer (Harvey Norman and JB Hi-Fi are held store by store) belongs to one group. Rebate agreements,
+  and in the forecasting platform debtor days and concentration, all work at group level. This is the master; the forecasting platform reads it.
+  <strong>{{ unmapped_count }}</strong> customers have no group yet.
+</p>
+
+<form method="get" action="/customers" class="grid">
+  <label>Name or parent contains <input name="search" value="{{ search }}" placeholder="e.g. HN, JB HI-FI, Amazon"></label>
+  <label>Entity
+    <select name="entity"><option value="">Both</option><option value="MGAU" {{ "selected" if entity == "MGAU" }}>MGAU</option><option value="MGNZ" {{ "selected" if entity == "MGNZ" }}>MGNZ</option></select>
+  </label>
+  <label>Group
+    <select name="group"><option value="">Any</option>{% for g in groups %}<option value="{{ g.code }}" {{ "selected" if group == g.code }}>{{ g.name }} ({{ counts.get(g.code, 0) }})</option>{% endfor %}</select>
+  </label>
+  <label><input type="checkbox" name="unmapped" value="true" {{ "checked" if unmapped }} style="display:inline;width:auto"> Only customers without a group</label>
+  <button type="submit">Show</button>
+</form>
+
+{% set can_edit = can(user.role, Permission.MANAGE_REGISTERS) %}
+{% if can_edit %}
+<details>
+  <summary>Add a customer group</summary>
+  <p class="muted">Give a retailer its own group when it has its own rebate agreement; otherwise an agreement on "Other" would apply to every Other customer.</p>
+  <form method="post" action="/customer-groups" class="grid">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label>Code (letters and digits, short) <input name="code" required maxlength="16" placeholder="e.g. BUN"></label>
+    <label>Name <input name="name" required placeholder="e.g. Bunnings"></label>
+    <label>Reason <input name="reason"></label>
+    <button type="submit">Add group</button>
+  </form>
+</details>
+{% endif %}
+
+{% if can_edit and search %}
+<form method="post" action="/customers/assign" class="inline">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  <input type="hidden" name="search" value="{{ search }}"><input type="hidden" name="entity" value="{{ entity }}">
+  {% if unmapped %}<input type="hidden" name="unmapped" value="true">{% endif %}
+  Put all <strong>{{ total }}</strong> customers matching "{{ search }}" into
+  <select name="group" aria-label="Group for all shown">{% for g in groups %}<option value="{{ g.code }}">{{ g.name }}</option>{% endfor %}</select>
+  <input name="reason" placeholder="Reason" aria-label="Reason for the assignment">
+  <button type="submit">Assign all</button>
+</form>
+<p class="muted">Check the list below first. Every assignment is recorded in the audit log with the group each customer was in before.</p>
+{% endif %}
+
+<p class="muted">Showing {{ customers|length }} of {{ total }}{% if total > limit %} (narrow the search to see the rest){% endif %}.</p>
+<table>
+  <thead><tr><th>Customer</th><th>NetSuite ID</th><th>Entity</th><th>Parent</th><th>Category</th><th>Terms</th><th>Group</th></tr></thead>
+  <tbody>
+  {% for c in customers %}
+    <tr class="{{ 'inactive' if c.is_inactive else '' }}">
+      <td>{{ c.name }}{% if c.is_inactive %} <span class="tag">inactive</span>{% endif %}</td>
+      <td>{{ c.netsuite_entity_id }}</td>
+      <td>{{ c.entity_code }}</td>
+      <td>{{ c.parent_name }}</td>
+      <td>{{ c.category }}</td>
+      <td>{{ c.terms }}</td>
+      <td>
+        {% if can_edit %}
+        <form method="post" action="/customers/assign" class="inline">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <input type="hidden" name="customer_id" value="{{ c.id }}">
+          <input type="hidden" name="search" value="{{ search }}"><input type="hidden" name="entity" value="{{ entity }}">
+          {% if unmapped %}<input type="hidden" name="unmapped" value="true">{% endif %}
+          <select name="group" aria-label="Group for {{ c.name }}">
+            <option value="">none</option>
+            {% for g in groups %}<option value="{{ g.code }}" {{ "selected" if c.customer_group_code == g.code }}>{{ g.name }}</option>{% endfor %}
+          </select>
+          <button type="submit">Save</button>
+        </form>
+        {% else %}{{ c.customer_group_code or "none" }}{% endif %}
+      </td>
+    </tr>
+  {% else %}
+    <tr><td colspan="7" class="muted">No customers match. If none are loaded yet, load the customer register under Load data.</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% endblock %}

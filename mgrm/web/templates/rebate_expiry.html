@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% block title %}Expiry and renewal · {{ APP_NAME }}{% endblock %}
+{% block content %}
+<h1>Expiry and renewal</h1>
+{% include "_rebate_nav.html" %}
+
+<h2>Ending in the next 90 days</h2>
+<table>
+  <thead><tr><th>Entity</th><th>Customer</th><th>Brand / products</th><th class="num">Rate</th><th>When</th></tr></thead>
+  <tbody>
+  {% for e in ending %}
+    <tr><td>{{ e.agreement.entity_code }}</td><td><a href="/rebates/agreement/{{ e.agreement.id }}">{{ e.agreement.customer_label }}</a></td>
+        <td>{{ e.agreement.product_scope }}</td><td class="num">{{ pct(e.rate.rate) }}</td><td>{{ e.reason }}</td></tr>
+  {% else %}
+    <tr><td colspan="5" class="muted">None.</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+
+<h2>In force with no end date</h2>
+<p class="muted">These run until someone ends them. Check each still reflects signed trading terms.</p>
+<table>
+  <thead><tr><th>Entity</th><th>Customer</th><th>Brand / products</th><th class="num">Rate</th><th></th></tr></thead>
+  <tbody>
+  {% for e in open_ended %}
+    <tr><td>{{ e.agreement.entity_code }}</td><td><a href="/rebates/agreement/{{ e.agreement.id }}">{{ e.agreement.customer_label }}</a></td>
+        <td>{{ e.agreement.product_scope }}</td><td class="num">{{ pct(e.rate.rate) }}</td><td>{{ e.reason }}</td></tr>
+  {% else %}
+    <tr><td colspan="5" class="muted">None.</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% endblock %}

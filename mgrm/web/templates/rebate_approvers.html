@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% block title %}Brand approvers · {{ APP_NAME }}{% endblock %}
+{% block content %}
+<h1>Brand approvers</h1>
+{% include "_rebate_nav.html" %}
+<p class="muted">
+  With no approvers assigned to a brand, any rebate reviewer (Ken) may approve its rate changes.
+  Assign a brand's Group Product Manager here and from then only they, or an administrator, may approve that brand's rates.
+  Give GPMs the <strong>Brand rebate approver</strong> role under Users: it sees the rebate master and nothing else.
+</p>
+<table>
+  <thead><tr><th>Brand</th><th>Approver</th><th></th></tr></thead>
+  <tbody>
+  {% for s in scopes %}
+    <tr><td>{{ s.brand_code }}</td><td>{{ names.get(s.user_id, "") }}</td>
+      <td><form method="post" action="/rebates/approvers/{{ s.id }}/remove" class="inline"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button type="submit" class="secondary">Remove</button></form></td></tr>
+  {% else %}
+    <tr><td colspan="3" class="muted">None assigned: every brand's rates are approved by rebate reviewers.</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+
+<h2>Assign an approver</h2>
+<form method="post" action="/rebates/approvers" class="grid">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  <label>Brand code <input name="brand_code" list="brands" required placeholder="e.g. EUFY"></label>
+  <datalist id="brands">{% for b in brands %}<option value="{{ b }}">{% endfor %}</datalist>
+  <label>Person
+    <select name="user_id" required>{% for c in candidates %}<option value="{{ c.id }}">{{ c.display_name }} ({{ c.role.title }})</option>{% endfor %}</select>
+  </label>
+  <button type="submit">Assign</button>
+</form>
+{% endblock %}

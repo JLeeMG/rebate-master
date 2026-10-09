@@ -1,0 +1,25 @@
+# Secrets: database password and any future sign-in client secret
+.env
+.env.*
+!.env.example
+*.egg-info/
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+
+# Generated exports and loaded input files never go into the repository.
+# Company financial data stays on MacGear machines (spec §12 decision 1);
+# only code and documentation go to GitHub. tests/test_repository.py enforces it.
+exports/
+inputs/
+*.xlsx
+*.xlsm
+*.xls
+*.csv
+# Evidence (emails, contracts) lives in the database, never in the repository.
+*.pdf
+*.msg
+*.eml

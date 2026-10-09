@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+{% block title %}Feed tokens · {{ APP_NAME }}{% endblock %}
+{% block content %}
+<h1>Feed tokens</h1>
+<p class="muted">
+  Other systems read customer groups, customers, brands and approved rates from this platform's feed (read-only).
+  Each needs a token. The forecasting platform's token goes in its <code>.env</code> as <code>REBATE_MASTER_TOKEN</code>.
+  Only a fingerprint of each token is stored, so a token is shown once, when it is created.
+</p>
+
+{% if new_token %}
+<div class="notice" role="status">
+  <p><strong>Token for "{{ new_token_name }}"</strong>. Copy it now; it will not be shown again.</p>
+  <pre class="notes">{{ new_token }}</pre>
+</div>
+{% endif %}
+
+<table>
+  <thead><tr><th>Name</th><th>Created</th><th>By</th><th>Last used</th><th>Status</th><th></th></tr></thead>
+  <tbody>
+  {% for t in tokens %}
+    <tr class="{{ 'inactive' if t.revoked_at else '' }}">
+      <td>{{ t.name }}</td>
+      <td>{{ t.created_at.strftime("%d %b %Y %H:%M") }}</td>
+      <td>{{ names.get(t.created_by_id, "") }}</td>
+      <td>{{ t.last_used_at.strftime("%d %b %Y %H:%M") if t.last_used_at else "never" }}</td>
+      <td>{{ "revoked " ~ t.revoked_at.strftime("%d %b %Y") if t.revoked_at else "active" }}</td>
+      <td>{% if not t.revoked_at %}
+        <form method="post" action="/admin/feed-tokens/{{ t.id }}/revoke" class="inline">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <button type="submit" class="secondary">Revoke</button>
+        </form>{% endif %}</td>
+    </tr>
+  {% else %}
+    <tr><td colspan="6" class="muted">No tokens yet.</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+
+<h2>Create a token</h2>
+<form method="post" action="/admin/feed-tokens" class="grid">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  <label>Which system will use it <input name="name" required placeholder="e.g. Forecasting platform"></label>
+  <button type="submit">Create</button>
+</form>
+{% endblock %}

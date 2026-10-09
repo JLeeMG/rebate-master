@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+{% block title %}Rate card · {{ APP_NAME }}{% endblock %}
+{% block content %}
+<h1>Rate card</h1>
+{% include "_rebate_nav.html" %}
+<form method="get" action="/rebates/rate-card" class="grid">
+  <label>Entity <select name="entity">{% for e in entities %}<option value="{{ e.value }}" {{ "selected" if entity == e.value }}>{{ e.value }}</option>{% endfor %}</select></label>
+  <label>Customer group (for a customer card) <select name="group"><option value="">All</option>{% for g in groups %}<option value="{{ g.code }}" {{ "selected" if group == g.code }}>{{ g.name }}</option>{% endfor %}</select></label>
+  <label>Brand (for a brand card) <input name="brand" value="{{ brand }}" placeholder="e.g. EUFY"></label>
+  <label>As at <input type="date" name="as_of" value="{{ on.isoformat() }}"></label>
+  <button type="submit">Show</button>
+</form>
+
+<p><strong>{{ entity }}</strong>{% if group %} &middot; customer group {{ group }}{% endif %}{% if brand %} &middot; brand "{{ brand }}"{% endif %}
+ &middot; approved rates in force on {{ on.strftime("%d %b %Y") }} &middot; source: MacGear rebate master</p>
+<table>
+  <thead><tr><th>Customer</th><th>Group</th><th>Brand / products</th><th>Type</th><th class="num">Rate</th><th>Since</th><th>Until</th><th>Approved by</th><th>Source document</th></tr></thead>
+  <tbody>
+  {% for r in rows %}
+    <tr>
+      <td><a href="/rebates/agreement/{{ r.agreement.id }}">{{ r.agreement.customer_label }}</a></td>
+      <td>{{ r.agreement.customer_group_code or "" }}</td>
+      <td>{{ r.agreement.product_scope }}</td>
+      <td>{{ r.agreement.rate_type.value }}{% if r.agreement.accrual_mode.value == "check_only" %} (check only){% endif %}</td>
+      <td class="num">{{ pct(r.rate.rate) }}</td>
+      <td>{{ r.rate.effective_from.strftime("%b %Y") }}</td>
+      <td>{{ r.rate.effective_to.strftime("%b %Y") if r.rate.effective_to else "open" }}</td>
+      <td>{{ names.get(r.rate.reviewed_by_id, "") }}</td>
+      <td class="muted">{{ r.rate.source_reference }}</td>
+    </tr>
+  {% else %}
+    <tr><td colspan="9" class="muted">No approved rates in force for this selection.</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+<p class="muted">Only approved rates appear. Stacked agreements on the same customer are separate rows; add them for the total.</p>
+{% endblock %}
