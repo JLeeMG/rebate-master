@@ -170,6 +170,16 @@ def test_trading_detail_with_the_wrong_columns_or_accounts_is_refused(db, people
     assert any("not one this search should return" in p for p in accounts.value.problems)
 
 
+def test_netsuites_overall_total_row_is_skipped_only_at_the_end(db, people, pb):
+    rows = pb_june_rows()
+    total = ["Overall Total", "", "", "", "", "", "", "3,877.56", "296,909.24"]
+    load_june(db, people, rows + [total])
+    assert db.query(SalesLine).count() == 18
+    with pytest.raises(LoadRejected) as misplaced:
+        load_june(db, people, [total] + rows)
+    assert any("Overall Total" in p for p in misplaced.value.problems)
+
+
 def test_brand_shares_add_up_to_the_agreement_rounded_once():
     from mgrm.rebates.accrual import split_rebate
 

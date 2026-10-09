@@ -43,6 +43,7 @@ ENTITY_BY_SUBSIDIARY = {"macgear au": Entity.MGAU, "macgear nz": Entity.MGNZ}
 TRUE_TEXT = {"yes", "true", "t", "y", "1"}
 FALSE_TEXT = {"no", "false", "f", "n", "0", ""}
 MAX_PROBLEMS_PER_KIND = 25  # beyond this, one summary line; the file is rejected either way
+NETSUITE_TOTAL_ROW = "Overall Total"  # the last row of a summary search's CSV export
 
 
 @dataclass(frozen=True)
@@ -138,9 +139,10 @@ def read_csv(text: str, kind: LoadKind, problems: Problems) -> list[dict[str, st
     if problems:
         return []
     rows = []
-    for number, values in enumerate(reader, start=2):
-        if not any(v.strip() for v in values):
-            continue
+    lines = [(number, values) for number, values in enumerate(reader, start=2) if any(v.strip() for v in values)]
+    if lines and lines[-1][1][0].strip() == NETSUITE_TOTAL_ROW:
+        lines.pop()  # a summary search's export ends with NetSuite's grand total; it is not a line of data
+    for number, values in lines:
         values = values + [""] * (len(header) - len(values))
         row = {key: values[index].strip() for key, index in positions.items()}
         row["_line"] = str(number)
