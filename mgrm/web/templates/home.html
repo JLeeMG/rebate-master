@@ -10,8 +10,8 @@
   </a>
   {% if can(user.role, Permission.APPROVE_REBATES) %}
   <a class="card" href="/rebates/review">
-    <h2>Review rates</h2>
-    <p>{{ pending }} rate change{{ "" if pending == 1 else "s" }} waiting for review.</p>
+    <h2>Review</h2>
+    <p>{{ pending }} proposal{{ "" if pending == 1 else "s" }} (rates, new agreements, changes, endings) waiting for review.</p>
   </a>
   {% endif %}
   <a class="card" href="/rebates/change-log">

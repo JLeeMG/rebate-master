@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% block title %}Add an agreement · {{ APP_NAME }}{% endblock %}
+{% block content %}
+<h1>Add an agreement</h1>
+{% include "_rebate_nav.html" %}
+<p class="muted">A new agreement and its first rate. Nothing uses it until someone other than you approves the rate in <em>Review rates</em>. A reason and the evidence are required.</p>
+<form method="post" action="/rebates/new" enctype="multipart/form-data" class="grid">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  <label>Entity <select name="entity" required>{% for e in entities %}<option value="{{ e.value }}" {{ "selected" if form.get("entity") == e.value }}>{{ e.value }}</option>{% endfor %}</select></label>
+  <label>Customer (as the agreement names it) <input name="customer_label" required value="{{ form.get('customer_label', '') }}" placeholder="e.g. Noel Leeming"></label>
+  <label>Customer group
+    <select name="customer_group_code"><option value="">none yet</option>{% for g in groups %}<option value="{{ g.code }}" {{ "selected" if form.get("customer_group_code") == g.code }}>{{ g.name }}</option>{% endfor %}</select>
+  </label>
+  <label>Brand code (or ALL) <input name="brand_code" value="{{ form.get('brand_code', '') }}" placeholder="e.g. EUFY"></label>
+  <label>Products covered <input name="product_scope" required value="{{ form.get('product_scope', '') }}" placeholder="e.g. EUFY (Security & Baby)"></label>
+  <label>Type <select name="rate_type">{% for t in rate_types %}<option value="{{ t.value }}">{{ t.value }}</option>{% endfor %}</select></label>
+  <label>Basis <select name="basis">{% for b in bases %}<option value="{{ b.value }}">{{ b.value.replace("_", " ") }}</option>{% endfor %}</select></label>
+  <label>Accrued? <select name="accrual_mode">{% for m in modes %}<option value="{{ m.value }}">{{ "accrued" if m.value == "accrue" else "check only" }}</option>{% endfor %}</select></label>
+  <label>Rate (%) <input name="rate_percent" required inputmode="decimal" value="{{ form.get('rate_percent', '') }}" placeholder="e.g. 12.5"></label>
+  <label>From <input type="date" name="effective_from" required value="{{ form.get('effective_from', '') }}"></label>
+  <label>To (blank if open) <input type="date" name="effective_to" value="{{ form.get('effective_to', '') }}"></label>
+  <label>Reason <input name="reason" required value="{{ form.get('reason', '') }}" placeholder="e.g. New range ranged at PB Tech from Nov 2026"></label>
+  <label>Source <input name="source_reference" required value="{{ form.get('source_reference', '') }}" placeholder="e.g. Email from PB Tech buyer, 3 Oct 2026"></label>
+  <label>Evidence (PDF, .msg, .eml or picture; up to 20 MB each) <input type="file" name="evidence" multiple required accept=".pdf,.msg,.eml,.png,.jpg,.jpeg"></label>
+  <button type="submit">Propose the agreement</button>
+</form>
+{% endblock %}

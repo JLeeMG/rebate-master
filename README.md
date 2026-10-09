@@ -19,8 +19,8 @@ build the platform can run it.
 | Person | Role | Can do |
 |---|---|---|
 | Jonathan Lee (CFO) | Administrator | Everything, including users, brand approvers and feed tokens |
-| Siobhan | Rebate editor | Enters agreements and rate changes with their evidence; maintains customers, customer groups and brands. Cannot approve her own entries |
-| Ken | Rebate reviewer | Approves or rejects rate changes entered by someone else |
+| Ken Buchanan, Siobhan Samson | Rebate editor and approver | Enter agreements, rate changes, agreement changes and endings with their evidence; maintain customers, customer groups and brands; approve what **others** enter. Neither can approve their own input |
+| (spare) | Rebate editor / Rebate reviewer | Enter only, or approve only, for anyone who should do one but not the other |
 | Group Product Managers / PMs (later) | Brand rebate approver | Approves rate changes for the brands assigned to them only |
 | Raymond (later) | Viewer | Reads everything, changes nothing |
 
@@ -28,39 +28,42 @@ Viewers and brand approvers see rates but not the sales amounts recorded by
 the legacy workbooks. The permission table is in `mgrm/auth/roles.py` and
 pinned by `tests/test_auth.py`.
 
-## Changing a rate: the audit trail
+## Every change needs a second person
 
-1. **Siobhan** opens the agreement and uses *Propose a rate change*. She must
-   give the new rate, the date it starts, **the reason**, the source, and **at
-   least one evidence file**: the email agreeing the rate saved as PDF, or the
-   Outlook email itself (.msg), a saved email (.eml) or a screenshot. Files are
-   checked by their content, not their name, and are limited to 20 MB each.
-2. The rate is **proposed**. Nothing uses it yet.
-3. **Ken** opens *Review rates*, opens the evidence, and approves or rejects
-   (a rejection needs a note). He cannot approve a rate he entered; the
-   database refuses it as well.
-4. On approval the old rate is closed the day before the new one starts.
-   Nothing is overwritten.
-5. The **Change log** shows every change: who proposed it and when, the old
-   and new rate, the reason, the evidence, who approved or rejected it, with
-   what note and when. Each agreement's page shows its own log too.
+Every input is a **proposal**. Nothing takes effect until someone **other than
+the person who entered it** approves it, in *Review*. The platform refuses a
+self-approval, and so does the database. This applies to all four kinds:
+
+| Input | Where | What approval does |
+|---|---|---|
+| **Add** an agreement | *Agreements → Add an agreement*: customer, group, brand, products, type, the first rate, reason, source, evidence | The agreement's first rate comes into force |
+| **Change** a rate | The agreement → *Propose a rate change*: rate, start date, reason, source, evidence | The new rate starts; the old one closes the day before |
+| **Change** an agreement's details | The agreement → *Propose a change to the agreement's details*: group, brand, products covered, type, basis, accrued or check-only; reason; optional evidence | The details change. If someone else changed them in the meantime, approval is refused: reject and propose again |
+| **End** ("delete") an agreement | The agreement → *End this agreement*: last day, reason, optional evidence | Its rate closes on that day. Nothing is erased: the agreement and its history stay |
+
+- A reason is always required; a rate always needs evidence (the email saved as
+  PDF, the Outlook .msg, a saved .eml, or a screenshot; up to 20 MB each,
+  checked by content). Further evidence can be attached to a pending proposal.
+- **Withdraw**: whoever entered a proposal can withdraw it before it is reviewed.
+  It never took effect, and the record of it stays.
+- **Reject**: needs a note saying why, so the author can correct it.
+- **The Change log** shows every proposal, approval, rejection and withdrawal:
+  who, when, what changed (old and new), the reason, the evidence, and the note.
 
 What cannot be undone, by design and enforced by the database itself:
 
 - **Evidence** is stored inside the database (so it is backed up with the
-  rates), fingerprinted with a SHA-256 hash on upload, and can never be
-  changed or deleted. To correct evidence, attach a further file.
-- **A reviewed rate** cannot be changed or deleted; only an open-ended
-  approved rate can be given an end date, once.
+  rates), fingerprinted with a SHA-256 hash on upload, and can never be changed
+  or deleted. To correct evidence, attach a further file.
+- **A reviewed or withdrawn rate or change** cannot be changed or deleted; a
+  pending one cannot be edited, only withdrawn. Only an open-ended approved rate
+  can be given an end date, once.
 - **The audit log** is append-only.
-
-Changing an agreement's details (customer group, brand, products covered,
-type, basis, accrued or check-only) also needs a reason and may carry evidence.
 
 **Brand approvers.** Under *Rebates → Brand approvers* the administrator can
 assign a brand's Group Product Manager. From then on only they, or an
-administrator, may approve that brand's rates; brands with no assigned
-approver stay with Ken.
+administrator, may approve that brand's proposals; brands with no assigned
+approver stay with Ken and Siobhan.
 
 ## The feed (for the forecasting platform)
 

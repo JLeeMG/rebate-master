@@ -15,6 +15,7 @@ TENANT = "11111111-2222-3333-4444-555555555555"
 def test_permission_table_is_as_agreed():
     # Pinned: changing who can do what must be a deliberate edit to this test too.
     assert ROLE_PERMISSIONS[Role.ADMIN] == frozenset(Permission)
+    assert ROLE_PERMISSIONS[Role.REBATE_MAINTAINER] == {P.VIEW, P.VIEW_SALES, P.EDIT_REBATES, P.APPROVE_REBATES, P.MANAGE_REGISTERS}
     assert ROLE_PERMISSIONS[Role.REBATE_EDITOR] == {P.VIEW, P.VIEW_SALES, P.EDIT_REBATES, P.MANAGE_REGISTERS}
     assert ROLE_PERMISSIONS[Role.REBATE_REVIEWER] == {P.VIEW, P.VIEW_SALES, P.APPROVE_REBATES}
     assert ROLE_PERMISSIONS[Role.BRAND_APPROVER] == {P.VIEW, P.APPROVE_REBATES}

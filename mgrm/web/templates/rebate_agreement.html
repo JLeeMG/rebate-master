@@ -22,7 +22,13 @@
       <td>{{ r.reason }}<div class="muted">{{ r.source_reference }}</div></td>
       <td>{% for f in evidence.get(r.id, []) %}{% include "_evidence.html" %}{% else %}<span class="muted">none</span>{% endfor %}</td>
       <td>{{ names.get(r.reviewed_by_id, "") }}{% if r.reviewed_at %}<div class="muted">{{ r.reviewed_at.strftime("%d %b %Y %H:%M") }}</div>{% endif %}{% if r.review_note %}<div>{{ r.review_note }}</div>{% endif %}</td>
-      <td>{% for f in r.load_flags %}<div>{{ f }}</div>{% endfor %}</td>
+      <td>{% for f in r.load_flags %}<div>{{ f }}</div>{% endfor %}
+        {% if r.status.value == "proposed" and r.entered_by_id == user.id %}
+        <form method="post" action="/rebates/rates/{{ r.id }}/withdraw" class="inline">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <button type="submit" class="secondary">Withdraw</button>
+        </form>{% endif %}
+      </td>
     </tr>
   {% else %}
     <tr><td colspan="9" class="muted">No rates yet.</td></tr>
@@ -30,6 +36,31 @@
   </tbody>
 </table>
 {% if can(user.role, Permission.APPROVE_REBATES) %}<p><a href="/rebates/review">Go to the review queue</a> to approve or reject proposed rates.</p>{% endif %}
+
+{% if changes %}
+<h2>Changes to the agreement</h2>
+<table>
+  <thead><tr><th>Change</th><th>Status</th><th>Entered by</th><th>Reason</th><th>Evidence</th><th>Reviewed by</th></tr></thead>
+  <tbody>
+  {% for c in changes %}
+    <tr class="{{ 'inactive' if c.status.value in ('rejected', 'withdrawn') else '' }}">
+      <td>{% if c.kind.value == "end" %}End the agreement on {{ c.payload.effective_to }}{% else %}{% for k, v in c.payload.changes.items() %}<div>{{ k.replace("_", " ") }}: {{ v[0] or "none" }} &rarr; <strong>{{ v[1] or "none" }}</strong></div>{% endfor %}{% endif %}</td>
+      <td class="{{ {'approved': 'ok', 'rejected': 'bad'}.get(c.status.value, '') }}">{{ c.status.value }}</td>
+      <td>{{ names.get(c.entered_by_id, "") }}<div class="muted">{{ c.entered_at.strftime("%d %b %Y %H:%M") }}</div></td>
+      <td>{{ c.reason }}{% if c.source_reference %}<div class="muted">{{ c.source_reference }}</div>{% endif %}</td>
+      <td>{% for f in change_evidence.get(c.id, []) %}{% include "_evidence.html" %}{% endfor %}</td>
+      <td>{{ names.get(c.reviewed_by_id, "") }}{% if c.review_note %}<div>{{ c.review_note }}</div>{% endif %}
+        {% if c.status.value == "proposed" and c.entered_by_id == user.id %}
+        <form method="post" action="/rebates/changes/{{ c.id }}/withdraw" class="inline">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <button type="submit" class="secondary">Withdraw</button>
+        </form>{% endif %}
+      </td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% endif %}
 
 {% if agreement_evidence %}
 <h2>Evidence for the agreement</h2>
@@ -65,7 +96,8 @@
   <button type="submit">Attach</button>
 </form>
 
-<h2>Agreement details</h2>
+<h2>Propose a change to the agreement's details</h2>
+<p class="muted">Nothing changes until someone other than you approves it.</p>
 <form method="post" action="/rebates/agreement/{{ agreement.id }}" enctype="multipart/form-data" class="grid">
   <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
   <label>Customer group
@@ -79,7 +111,18 @@
   <label>Agreed by <input name="agreed_by" value="{{ agreement.agreed_by }}"></label>
   <label>Reason for the change <input name="reason" placeholder="required if anything changes"></label>
   <label>Evidence (optional) <input type="file" name="evidence" multiple accept=".pdf,.msg,.eml,.png,.jpg,.jpeg"></label>
-  <button type="submit">Save details</button>
+  <button type="submit">Propose the change</button>
+</form>
+
+<h2>End this agreement</h2>
+<p class="muted">Closes the rate in force on the date you give. The agreement and its history stay; nothing is deleted. Takes effect once someone other than you approves it.</p>
+<form method="post" action="/rebates/agreement/{{ agreement.id }}/end" enctype="multipart/form-data" class="grid">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  <label>Last day it applies <input type="date" name="effective_to" required></label>
+  <label>Reason <input name="reason" required placeholder="e.g. Retailer delisted the range"></label>
+  <label>Source <input name="source_reference" placeholder="e.g. Email from JB buyer, 5 Oct 2026"></label>
+  <label>Evidence (optional) <input type="file" name="evidence" multiple accept=".pdf,.msg,.eml,.png,.jpg,.jpeg"></label>
+  <button type="submit">Propose ending it</button>
 </form>
 {% endif %}
 

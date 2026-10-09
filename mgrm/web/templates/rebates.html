@@ -3,6 +3,7 @@
 {% block content %}
 <h1>Rebate master</h1>
 {% include "_rebate_nav.html" %}
+{% if can(user.role, Permission.EDIT_REBATES) %}<p><a class="button" href="/rebates/new">Add an agreement</a></p>{% endif %}
 <p class="muted">Every customer rebate agreement, by entity, customer group and brand. A rate is used only once someone other than the person who entered it has approved it.</p>
 {% if any_pending and can(user.role, Permission.APPROVE_REBATES) %}<p class="notice">There are rates waiting for review. <a href="/rebates/review">Review them</a>.</p>{% endif %}
 

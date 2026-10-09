@@ -26,6 +26,11 @@
         {% if e.action == "rebate.propose" %}Proposed a rate
         {% elif e.action == "rebate.approve" %}<span class="ok">Approved</span>
         {% elif e.action == "rebate.reject" %}<span class="bad">Rejected</span>
+        {% elif e.action == "rebate.agreement_create" %}Proposed a new agreement
+        {% elif e.action == "rebate.change_propose" %}{{ "Proposed ending the agreement" if d.kind == "end" else "Proposed a change to the agreement" }}
+        {% elif e.action == "rebate.change_approve" %}<span class="ok">Approved the {{ "ending" if d.kind == "end" else "change" }}</span>
+        {% elif e.action == "rebate.change_reject" %}<span class="bad">Rejected the {{ "ending" if d.kind == "end" else "change" }}</span>
+        {% elif e.action == "rebate.withdraw" %}Withdrew their own proposal
         {% elif e.action == "rebate.agreement_update" %}Changed the agreement
         {% elif e.action == "rebate.evidence" %}Attached evidence
         {% endif %}
@@ -33,13 +38,16 @@
       <td>
         {% if e.action == "rebate.propose" %}{{ pct(d.previous_rate) if d.previous_rate else "none" }} &rarr; <strong>{{ pct(d.rate) }}</strong> from {{ d.effective_from }}{% if d.effective_to %} to {{ d.effective_to }}{% endif %}
         {% elif e.action in ("rebate.approve", "rebate.reject") %}{{ pct(d.rate) }}{% if d.effective_from %} from {{ d.effective_from }}{% endif %}
-        {% elif e.action == "rebate.agreement_update" %}{% for k, v in d.changes.items() %}<div>{{ k.replace("_", " ") }}: {{ v[0] }} &rarr; {{ v[1] }}</div>{% endfor %}
+        {% elif e.action == "rebate.change_propose" and d.kind == "end" %}last day {{ d.effective_to }} (rate {{ pct(d.rate) }})
+        {% elif e.action == "rebate.agreement_create" %}{{ d.customer }} &middot; {{ d.scope }}
+        {% elif e.action in ("rebate.agreement_update", "rebate.change_propose") and d.changes %}{% for k, v in d.changes.items() %}<div>{{ k.replace("_", " ") }}: {{ v[0] }} &rarr; {{ v[1] }}</div>{% endfor %}
         {% endif %}
       </td>
       <td>{{ d.reason or d.note or "" }}{% if d.source %}<div class="muted">{{ d.source }}</div>{% endif %}</td>
       <td>
         {% if e.action == "rebate.evidence" %}<div class="evidence"><a href="/rebates/evidence/{{ d.evidence_id }}">{{ d.file }}</a> <span class="muted">{{ d.sha256[:12] }}</span></div>
-        {% elif d.rate_id %}{% for f in evidence.get(d.rate_id, []) %}{% include "_evidence.html" %}{% endfor %}{% endif %}
+        {% elif d.rate_id %}{% for f in evidence.get(d.rate_id, []) %}{% include "_evidence.html" %}{% endfor %}
+        {% elif d.change_id %}{% for f in change_evidence.get(d.change_id, []) %}{% include "_evidence.html" %}{% endfor %}{% endif %}
       </td>
     </tr>
   {% else %}

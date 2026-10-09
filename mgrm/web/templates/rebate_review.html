@@ -1,9 +1,11 @@
 {% extends "base.html" %}
 {% block title %}Review rates · {{ APP_NAME }}{% endblock %}
 {% block content %}
-<h1>Rates awaiting review</h1>
+<h1>Awaiting review</h1>
 {% include "_rebate_nav.html" %}
-<p class="muted">A wrong rate here is wrong everywhere downstream. Open the evidence and check each rate against it before approving. You cannot approve a rate you entered.</p>
+<p class="muted">A wrong rate here is wrong everywhere downstream. Open the evidence and check each item against it before approving. Nobody can approve what they entered themselves.</p>
+
+<h2>Rates and new agreements</h2>
 
 <form method="post" action="/rebates/review/approve-selected" id="batch">
   <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
@@ -15,7 +17,7 @@
   {% for r, a, refusal in items %}
     <tr>
       <td>{% if not refusal %}<input form="batch" type="checkbox" name="rate_id" value="{{ r.id }}" aria-label="Select rate {{ r.id }}">{% endif %}</td>
-      <td><a href="/rebates/agreement/{{ a.id }}">{{ a.entity_code }} &middot; {{ a.customer_label }}</a><div class="muted">{{ a.product_scope }} &middot; {{ a.rate_type.value }}{% if a.accrual_mode.value == "check_only" %} &middot; check only{% endif %}</div></td>
+      <td>{% if a.id in new_agreements %}<span class="tag">new agreement</span> {% endif %}<a href="/rebates/agreement/{{ a.id }}">{{ a.entity_code }} &middot; {{ a.customer_label }}</a><div class="muted">{{ a.product_scope }} &middot; {{ a.rate_type.value }}{% if a.accrual_mode.value == "check_only" %} &middot; check only{% endif %}</div></td>
       <td class="num">{{ pct(r.rate) }}</td>
       <td>{{ r.effective_from.strftime("%b %Y") }}</td>
       <td>{{ r.effective_to.strftime("%b %Y") if r.effective_to else "open" }}</td>
@@ -37,6 +39,35 @@
     </tr>
   {% else %}
     <tr><td colspan="10" class="muted">Nothing is waiting for review.</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+
+<h2>Changes to agreements</h2>
+<table>
+  <thead><tr><th>Agreement</th><th>Change</th><th>Entered by</th><th>Reason and source</th><th>Evidence</th><th>Decision</th></tr></thead>
+  <tbody>
+  {% for c, a, refusal in change_items %}
+    <tr>
+      <td><a href="/rebates/agreement/{{ a.id }}">{{ a.entity_code }} &middot; {{ a.customer_label }}</a><div class="muted">{{ a.product_scope }}</div></td>
+      <td>{% if c.kind.value == "end" %}End the agreement on {{ c.payload.effective_to }}{% else %}{% for k, v in c.payload.changes.items() %}<div>{{ k.replace("_", " ") }}: {{ v[0] or "none" }} &rarr; <strong>{{ v[1] or "none" }}</strong></div>{% endfor %}{% endif %}</td>
+      <td>{{ names.get(c.entered_by_id, "") }}</td>
+      <td>{{ c.reason }}{% if c.source_reference %}<div class="muted">{{ c.source_reference }}</div>{% endif %}</td>
+      <td>{% for f in change_evidence.get(c.id, []) %}{% include "_evidence.html" %}{% else %}<span class="muted">none</span>{% endfor %}</td>
+      <td>
+        {% if refusal %}<span class="muted">{{ refusal }}</span>
+        {% else %}
+        <form method="post" action="/rebates/changes/{{ c.id }}/decision" class="inline">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <input name="note" placeholder="Note (required to reject)" aria-label="Note for change {{ c.id }}">
+          <button type="submit" name="decision" value="approve">Approve</button>
+          <button type="submit" name="decision" value="reject" class="secondary">Reject</button>
+        </form>
+        {% endif %}
+      </td>
+    </tr>
+  {% else %}
+    <tr><td colspan="6" class="muted">No agreement changes are waiting.</td></tr>
   {% endfor %}
   </tbody>
 </table>

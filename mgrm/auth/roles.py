@@ -14,6 +14,7 @@ from enum import StrEnum
 
 class Role(StrEnum):
     ADMIN = "admin"
+    REBATE_MAINTAINER = "rebate_maintainer"
     REBATE_EDITOR = "rebate_editor"
     REBATE_REVIEWER = "rebate_reviewer"
     BRAND_APPROVER = "brand_approver"
@@ -26,6 +27,7 @@ class Role(StrEnum):
 
 ROLE_TITLES: dict[Role, str] = {
     Role.ADMIN: "Administrator",
+    Role.REBATE_MAINTAINER: "Rebate editor and approver",
     Role.REBATE_EDITOR: "Rebate editor",
     Role.REBATE_REVIEWER: "Rebate reviewer",
     Role.BRAND_APPROVER: "Brand rebate approver",
@@ -34,6 +36,10 @@ ROLE_TITLES: dict[Role, str] = {
 
 ROLE_DESCRIPTIONS: dict[Role, str] = {
     Role.ADMIN: "Everything, including users, brand approvers and the feed to the forecasting platform.",
+    Role.REBATE_MAINTAINER: (
+        "Enters agreements, rate changes and agreement changes with their evidence, maintains customers, customer "
+        "groups and brands, and approves what others enter. Never approves their own entries."
+    ),
     Role.REBATE_EDITOR: (
         "Enters agreements and rate changes with their evidence, and maintains customers, customer groups "
         "and brands. Cannot approve their own entries."
@@ -59,6 +65,8 @@ P = Permission
 
 ROLE_PERMISSIONS: dict[Role, frozenset[Permission]] = {
     Role.ADMIN: frozenset(Permission),
+    # Four-eyes holds per person, not per role: nobody approves their own entry (mgrm.rebates.service and the database).
+    Role.REBATE_MAINTAINER: frozenset({P.VIEW, P.VIEW_SALES, P.EDIT_REBATES, P.APPROVE_REBATES, P.MANAGE_REGISTERS}),
     Role.REBATE_EDITOR: frozenset({P.VIEW, P.VIEW_SALES, P.EDIT_REBATES, P.MANAGE_REGISTERS}),
     Role.REBATE_REVIEWER: frozenset({P.VIEW, P.VIEW_SALES, P.APPROVE_REBATES}),
     Role.BRAND_APPROVER: frozenset({P.VIEW, P.APPROVE_REBATES}),

@@ -20,7 +20,8 @@ REVIEW, ADMIN_PAGES, LOADS = ["/rebates/review"], ["/admin/users", "/admin/audit
         (Role.VIEWER, READ_PAGES, REVIEW + ADMIN_PAGES + LOADS),
         (Role.BRAND_APPROVER, READ_PAGES + REVIEW, ADMIN_PAGES + LOADS),
         (Role.REBATE_REVIEWER, READ_PAGES + REVIEW, ADMIN_PAGES + LOADS),
-        (Role.REBATE_EDITOR, READ_PAGES + LOADS, REVIEW + ADMIN_PAGES),
+        (Role.REBATE_MAINTAINER, READ_PAGES + LOADS + REVIEW + ["/rebates/new"], ADMIN_PAGES),
+        (Role.REBATE_EDITOR, READ_PAGES + LOADS + ["/rebates/new"], REVIEW + ADMIN_PAGES),
         (Role.ADMIN, READ_PAGES + REVIEW + ADMIN_PAGES + LOADS, []),
     ],
 )
@@ -115,3 +116,42 @@ def test_every_page_is_free_of_bare_dollars_and_markers(client, make_user, db, t
         response = client.get(path)
         assert response.status_code == 200, path
         assert scan_generated_text(response.text) == [], path
+
+
+def test_ken_and_siobhan_enter_and_approve_each_others_input(client, make_user, db):
+    from mgrm.models import RebateChangeRequest
+
+    make_user(Role.REBATE_MAINTAINER, email="siobhan@example.com", display_name="Siobhan")
+    make_user(Role.REBATE_MAINTAINER, email="ken@example.com", display_name="Ken")
+
+    sign_in(client, "siobhan@example.com")
+    created = client.post("/rebates/new", data={
+        "csrf_token": form_token(client, "/rebates/new"), "entity": "MGNZ", "customer_label": "PB Technology",
+        "customer_group_code": "PBT", "brand_code": "EUFY", "product_scope": "EUFY", "rate_type": "rebate",
+        "basis": "rebate_eligible_sales", "accrual_mode": "accrue", "rate_percent": "15", "effective_from": "2026-11-01",
+        "source_reference": "Email from PB Tech", "reason": "EUFY ranged at PB Tech"},
+        files=[("evidence", ("PB email.pdf", PDF_BYTES, "application/pdf"))])
+    assert "New agreement proposed" in created.text
+    agreement = db.query(RebateAgreement).one()
+    queue = client.get("/rebates/review").text
+    assert "new agreement" in queue and "someone else must review it" in queue  # her own: no approve button
+
+    switch(client, "ken@example.com")
+    rate = db.query(RebateRate).one()
+    client.post(f"/rebates/rates/{rate.id}/decision", data={"csrf_token": form_token(client, "/rebates/review"), "decision": "approve"})
+    db.refresh(rate)
+    assert rate.status is ReviewStatus.APPROVED
+
+    page = f"/rebates/agreement/{agreement.id}"
+    proposed = client.post(f"{page}/end", data={"csrf_token": form_token(client, page), "effective_to": "2027-03-31",
+                                                "reason": "Range delisted"})
+    assert "Ending proposed" in proposed.text
+    change = db.query(RebateChangeRequest).one()
+
+    switch(client, "siobhan@example.com")
+    client.post(f"/rebates/changes/{change.id}/decision", data={"csrf_token": form_token(client, "/rebates/review"), "decision": "approve"})
+    db.refresh(rate)
+    assert rate.effective_to.isoformat() == "2027-03-31"
+    log = client.get("/rebates/change-log").text
+    for expected in ("Proposed a new agreement", "Proposed ending the agreement", "Approved the ending", "Range delisted"):
+        assert expected in log, expected

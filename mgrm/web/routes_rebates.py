@@ -28,6 +28,7 @@ from mgrm.models import (
     RebateAgreement,
     RebateApproverScope,
     RebateBasis,
+    RebateChangeRequest,
     RebateRate,
     RebateWorkbookMonth,
     ReviewStatus,
@@ -36,13 +37,18 @@ from mgrm.rebates.service import (
     RebateError,
     Upload,
     agreements_with_rates,
-    approval_refusal,
     approve,
+    approve_change,
     attach_evidence,
     expiry_and_renewal,
+    propose_agreement_change,
+    propose_end,
+    propose_new_agreement,
     propose_rate,
     reject,
-    update_agreement,
+    reject_change,
+    review_refusal,
+    withdraw,
 )
 from mgrm.web.app import render
 from mgrm.web.security import get_db, require, verify_csrf
@@ -57,7 +63,10 @@ HISTORY_MONTHS_SHOWN = 24
 CHANGE_LOG_SHOWN = 500
 PERCENT = Decimal("100")
 RATE_SHOWN = Decimal("0.00001")  # an applied rate to a thousandth of a percent
-CHANGE_ACTIONS = ("rebate.propose", "rebate.approve", "rebate.reject", "rebate.agreement_update", "rebate.evidence")
+CHANGE_ACTIONS = (
+    "rebate.agreement_create", "rebate.propose", "rebate.approve", "rebate.reject", "rebate.change_propose",
+    "rebate.change_approve", "rebate.change_reject", "rebate.withdraw", "rebate.agreement_update", "rebate.evidence",
+)
 
 
 def pct(rate: Decimal | None) -> str:
@@ -87,18 +96,25 @@ async def _uploads(files: list[UploadFile] | None, description: str = "") -> lis
     return uploads
 
 
-def _evidence_by_rate(db: Session, agreement_ids) -> tuple[dict[int, list[EvidenceFile]], dict[int, list[EvidenceFile]]]:
-    """(evidence keyed by rate id, evidence keyed by agreement id for agreement-level files). Content not loaded."""
+def _evidence(db: Session, agreement_ids) -> tuple[dict[int, list], dict[int, list], dict[int, list]]:
+    """Evidence (content not loaded) keyed by rate id, by change request id, and by agreement for general files."""
     rows = db.execute(
-        select(EvidenceFile.id, EvidenceFile.agreement_id, EvidenceFile.rate_id, EvidenceFile.file_name,
-               EvidenceFile.size_bytes, EvidenceFile.sha256, EvidenceFile.uploaded_by_id, EvidenceFile.uploaded_at)
+        select(EvidenceFile.id, EvidenceFile.agreement_id, EvidenceFile.rate_id, EvidenceFile.change_request_id,
+               EvidenceFile.file_name, EvidenceFile.size_bytes, EvidenceFile.sha256, EvidenceFile.uploaded_by_id,
+               EvidenceFile.uploaded_at)
         .where(EvidenceFile.agreement_id.in_(list(agreement_ids)))
     ).all()
     by_rate: dict[int, list] = {}
+    by_change: dict[int, list] = {}
     by_agreement: dict[int, list] = {}
     for row in rows:
-        (by_rate.setdefault(row.rate_id, []) if row.rate_id else by_agreement.setdefault(row.agreement_id, [])).append(row)
-    return by_rate, by_agreement
+        if row.rate_id:
+            by_rate.setdefault(row.rate_id, []).append(row)
+        elif row.change_request_id:
+            by_change.setdefault(row.change_request_id, []).append(row)
+        else:
+            by_agreement.setdefault(row.agreement_id, []).append(row)
+    return by_rate, by_change, by_agreement
 
 
 # ---------------------------------------------------------------- the list
@@ -141,13 +157,16 @@ def _agreement_page(request: Request, db: Session, agreement: RebateAgreement, u
     history = db.scalars(select(RebateWorkbookMonth).where(RebateWorkbookMonth.agreement_id == agreement.id)
                          .order_by(RebateWorkbookMonth.period.desc()).limit(HISTORY_MONTHS_SHOWN)).all()
     events = db.scalars(select(AuditEvent).where(AuditEvent.subject == agreement.code).order_by(AuditEvent.id.desc())).all()
-    by_rate, by_agreement = _evidence_by_rate(db, [agreement.id])
+    changes = db.scalars(select(RebateChangeRequest).where(RebateChangeRequest.agreement_id == agreement.id)
+                         .order_by(RebateChangeRequest.id.desc())).all()
+    by_rate, by_change, by_agreement = _evidence(db, [agreement.id])
     currency = FUNCTIONAL_CURRENCY[Entity(agreement.entity_code)]
     return render(
         request, "rebate_agreement.html", status_code=status_code, agreement=agreement, rates=rates,
         history=history, events=events, names=_names(db), pct=pct, groups=_groups(db),
         rate_types=list(RateType), bases=list(RebateBasis), modes=list(AccrualMode),
-        evidence=by_rate, agreement_evidence=by_agreement.get(agreement.id, []),
+        evidence=by_rate, change_evidence=by_change, agreement_evidence=by_agreement.get(agreement.id, []),
+        changes=changes, today=date.today(),
         show_money=can(user.role, Permission.VIEW_SALES),
         money=lambda v: format_amount(v, currency),
         applied=lambda h: pct((h.rebate_due / h.sales).quantize(RATE_SHOWN)) if h.sales else "",
@@ -245,13 +264,107 @@ async def change_agreement(
     }
     try:
         with db.begin_nested():
-            changed = update_agreement(db, actor=user, agreement=agreement, changes=changes, reason=reason,
-                                       evidence=await _uploads(evidence))
+            proposed = propose_agreement_change(db, actor=user, agreement=agreement, changes=changes, reason=reason,
+                                                evidence=await _uploads(evidence))
     except RebateError as exc:
-        db.refresh(agreement)
         return _agreement_page(request, db, agreement, user, 400, error=str(exc))
     return _agreement_page(request, db, agreement, user,
-                           notice="Agreement updated." if changed else "Nothing was different, so nothing changed.")
+                           notice="Change proposed. It takes effect once someone else approves it." if proposed
+                           else "Nothing was different, so nothing was proposed.")
+
+
+@router.post("/agreement/{agreement_id}/end", dependencies=[Depends(verify_csrf)])
+async def end_agreement(
+    request: Request,
+    agreement_id: int,
+    effective_to: str = Form(...),
+    reason: str = Form(""),
+    source_reference: str = Form(""),
+    evidence: list[UploadFile] | None = File(None),
+    user: AppUser = Depends(editor),
+    db: Session = Depends(get_db),
+):
+    agreement = _get(db, agreement_id)
+    try:
+        end = _parse_date(effective_to)
+        if end is None:
+            raise RebateError("Give the last day the agreement applies.")
+        with db.begin_nested():
+            propose_end(db, actor=user, agreement=agreement, effective_to=end, reason=reason,
+                        source_reference=source_reference, evidence=await _uploads(evidence))
+    except (ValueError, RebateError) as exc:
+        message = str(exc) if isinstance(exc, RebateError) else "The date is not valid."
+        return _agreement_page(request, db, agreement, user, 400, error=message)
+    return _agreement_page(request, db, agreement, user, notice="Ending proposed. It takes effect once someone else approves it.")
+
+
+@router.post("/{kind}/{item_id}/withdraw", dependencies=[Depends(verify_csrf)])
+def withdraw_own(request: Request, kind: str, item_id: int, note: str = Form(""), user: AppUser = Depends(editor),
+                 db: Session = Depends(get_db)):
+    model = {"rates": RebateRate, "changes": RebateChangeRequest}.get(kind)
+    item = db.get(model, item_id) if model else None
+    if item is None:
+        raise HTTPException(status_code=404, detail="Nothing to withdraw")
+    agreement = _get(db, item.agreement_id)
+    try:
+        with db.begin_nested():
+            withdraw(db, actor=user, item=item, note=note)
+    except RebateError as exc:
+        return _agreement_page(request, db, agreement, user, 400, error=str(exc))
+    return _agreement_page(request, db, agreement, user, notice="Withdrawn. It never took effect, and the record of it stays.")
+
+
+# ---------------------------------------------------------------- a new agreement
+
+
+@router.get("/new")
+def new_agreement_page(request: Request, user: AppUser = Depends(editor), db: Session = Depends(get_db)):
+    return render(request, "rebate_new.html", groups=_groups(db), entities=TRADING_ENTITIES, rate_types=list(RateType),
+                  bases=list(RebateBasis), modes=list(AccrualMode), form={})
+
+
+@router.post("/new", dependencies=[Depends(verify_csrf)])
+async def create_agreement(
+    request: Request,
+    entity: str = Form(...),
+    customer_label: str = Form(""),
+    customer_group_code: str = Form(""),
+    brand_code: str = Form(""),
+    product_scope: str = Form(""),
+    rate_type: RateType = Form(...),
+    basis: RebateBasis = Form(...),
+    accrual_mode: AccrualMode = Form(...),
+    rate_percent: str = Form(...),
+    effective_from: str = Form(...),
+    effective_to: str = Form(""),
+    source_reference: str = Form(""),
+    reason: str = Form(""),
+    evidence: list[UploadFile] | None = File(None),
+    user: AppUser = Depends(editor),
+    db: Session = Depends(get_db),
+):
+    form = dict(entity=entity, customer_label=customer_label, customer_group_code=customer_group_code, brand_code=brand_code,
+                product_scope=product_scope, rate_percent=rate_percent, effective_from=effective_from,
+                effective_to=effective_to, source_reference=source_reference, reason=reason)
+    try:
+        if entity not in {e.value for e in TRADING_ENTITIES}:
+            raise RebateError("Choose MGAU or MGNZ.")
+        start = _parse_date(effective_from)
+        if start is None:
+            raise RebateError("Give the date the rate starts.")
+        agreement = propose_new_agreement(
+            db, actor=user, entity=entity, customer_label=customer_label, customer_group_code=customer_group_code or None,
+            brand_code=brand_code, product_scope=product_scope, rate_type=rate_type, basis=basis, accrual_mode=accrual_mode,
+            rate=Decimal(rate_percent.strip().rstrip("%")) / PERCENT, effective_from=start, effective_to=_parse_date(effective_to),
+            source_reference=source_reference, reason=reason, evidence=await _uploads(evidence),
+        )
+    except (InvalidOperation, ValueError) as exc:
+        message = str(exc) if isinstance(exc, RebateError) else "The rate must be a number, such as 12.5, and dates must be valid."
+        return render(request, "rebate_new.html", status_code=400, error=message, groups=_groups(db),
+                      entities=TRADING_ENTITIES, rate_types=list(RateType), bases=list(RebateBasis), modes=list(AccrualMode),
+                      form=form)
+    return _agreement_page(request, db, agreement, user,
+                           notice="New agreement proposed with its first rate. It takes effect once someone else approves it.")
 
 
 @router.get("/evidence/{evidence_id}")
@@ -274,11 +387,17 @@ def download_evidence(evidence_id: int, user: AppUser = Depends(reader), db: Ses
 def _review_page(request: Request, db: Session, user: AppUser, status_code=200, **context):
     proposed = db.scalars(select(RebateRate).where(RebateRate.status == ReviewStatus.PROPOSED)
                           .order_by(RebateRate.agreement_id, RebateRate.effective_from)).all()
-    agreements = {a.id: a for a in db.scalars(select(RebateAgreement).where(RebateAgreement.id.in_({r.agreement_id for r in proposed})))}
-    by_rate, _ = _evidence_by_rate(db, agreements.keys())
-    items = [(r, agreements[r.agreement_id], approval_refusal(db, user, r, agreements[r.agreement_id])) for r in proposed]
-    return render(request, "rebate_review.html", status_code=status_code, items=items, names=_names(db), pct=pct,
-                  evidence=by_rate, **context)
+    changes = db.scalars(select(RebateChangeRequest).where(RebateChangeRequest.status == ReviewStatus.PROPOSED)
+                         .order_by(RebateChangeRequest.id)).all()
+    ids = {r.agreement_id for r in proposed} | {c.agreement_id for c in changes}
+    agreements = {a.id: a for a in db.scalars(select(RebateAgreement).where(RebateAgreement.id.in_(ids)))}
+    approved_once = set(db.scalars(select(RebateRate.agreement_id).where(RebateRate.status == ReviewStatus.APPROVED)))
+    by_rate, by_change, _ = _evidence(db, agreements.keys())
+    items = [(r, agreements[r.agreement_id], review_refusal(db, user, r, agreements[r.agreement_id])) for r in proposed]
+    change_items = [(c, agreements[c.agreement_id], review_refusal(db, user, c, agreements[c.agreement_id])) for c in changes]
+    return render(request, "rebate_review.html", status_code=status_code, items=items, change_items=change_items,
+                  names=_names(db), pct=pct, evidence=by_rate, change_evidence=by_change, new_agreements=set(ids) - approved_once,
+                  **context)
 
 
 @router.get("/review")
@@ -301,6 +420,26 @@ def decide(
             raise RebateError("That rate no longer exists.")
         with db.begin_nested():
             (approve if decision == "approve" else reject)(db, actor=user, rate=rate, note=note)
+    except RebateError as exc:
+        return _review_page(request, db, user, 400, error=str(exc))
+    return RedirectResponse("/rebates/review", status_code=303)
+
+
+@router.post("/changes/{change_id}/decision", dependencies=[Depends(verify_csrf)])
+def decide_change(
+    request: Request,
+    change_id: int,
+    decision: str = Form(...),
+    note: str = Form(""),
+    user: AppUser = Depends(approver),
+    db: Session = Depends(get_db),
+):
+    change = db.get(RebateChangeRequest, change_id)
+    try:
+        if change is None:
+            raise RebateError("That change no longer exists.")
+        with db.begin_nested():
+            (approve_change if decision == "approve" else reject_change)(db, actor=user, request=change, note=note)
     except RebateError as exc:
         return _review_page(request, db, user, 400, error=str(exc))
     return RedirectResponse("/rebates/review", status_code=303)
@@ -358,11 +497,16 @@ def change_log(
         if len(rows) >= CHANGE_LOG_SHOWN:
             break
     rate_ids = {e.detail.get("rate_id") for e, _ in rows if e.detail.get("rate_id")}
+    change_ids = {e.detail.get("change_id") for e, _ in rows if e.detail.get("change_id")}
     evidence: dict[int, list] = {}
-    for row in db.execute(select(EvidenceFile.id, EvidenceFile.rate_id, EvidenceFile.file_name)
-                          .where(EvidenceFile.rate_id.in_(rate_ids))).all():
-        evidence.setdefault(row.rate_id, []).append(row)
-    return render(request, "change_log.html", rows=rows, names=names, pct=pct, evidence=evidence,
+    change_evidence: dict[int, list] = {}
+    for row in db.execute(select(EvidenceFile.id, EvidenceFile.rate_id, EvidenceFile.change_request_id, EvidenceFile.file_name)
+                          .where(EvidenceFile.rate_id.in_(rate_ids) | EvidenceFile.change_request_id.in_(change_ids))).all():
+        if row.rate_id:
+            evidence.setdefault(row.rate_id, []).append(row)
+        else:
+            change_evidence.setdefault(row.change_request_id, []).append(row)
+    return render(request, "change_log.html", rows=rows, names=names, pct=pct, evidence=evidence, change_evidence=change_evidence,
                   entities=TRADING_ENTITIES, entity=entity, search=search, person=person, since=since,
                   people=sorted(names.items(), key=lambda p: p[1]), limit=CHANGE_LOG_SHOWN)
 

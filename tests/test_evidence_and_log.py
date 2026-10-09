@@ -17,8 +17,9 @@ from mgrm.rebates.service import (
     approve,
     attach_evidence,
     evidence_type,
+    approve_change,
+    propose_agreement_change,
     propose_rate,
-    update_agreement,
 )
 from tests.conftest import PDF_BYTES
 
@@ -155,16 +156,21 @@ def test_a_reviewer_cannot_add_evidence(db, ken, agreement):
         attach_evidence(db, actor=ken, agreement=agreement, uploads=[Upload("a.pdf", PDF_BYTES)])
 
 
-def test_changing_an_agreement_needs_a_reason_and_is_logged(db, siobhan, agreement):
+def test_changing_an_agreement_needs_a_reason_and_is_logged(db, siobhan, ken, agreement):
     with pytest.raises(RebateError, match="reason"):
-        update_agreement(db, actor=siobhan, agreement=agreement, changes={"customer_group_code": "OTHER"}, reason="", evidence=[])
-    assert agreement.customer_group_code == "NL"
-    update_agreement(db, actor=siobhan, agreement=agreement, changes={"customer_group_code": "OTHER"},
-                     reason="NLG Commercial accounts are not covered", evidence=[Upload("email.pdf", PDF_BYTES)])
-    event = db.scalar(select(AuditEvent).where(AuditEvent.action == "rebate.agreement_update"))
-    assert event.detail == {"reason": "NLG Commercial accounts are not covered", "changes": {"customer_group_code": ["NL", "OTHER"]}}
-    assert db.query(EvidenceFile).filter(EvidenceFile.rate_id.is_(None)).count() == 1
+        propose_agreement_change(db, actor=siobhan, agreement=agreement, changes={"customer_group_code": "OTHER"},
+                                 reason="", evidence=[])
+    request = propose_agreement_change(db, actor=siobhan, agreement=agreement, changes={"customer_group_code": "OTHER"},
+                                       reason="NLG Commercial accounts are not covered", evidence=[Upload("email.pdf", PDF_BYTES)])
+    assert agreement.customer_group_code == "NL"  # nothing changes until someone else approves
+    event = db.scalar(select(AuditEvent).where(AuditEvent.action == "rebate.change_propose"))
+    assert event.detail["reason"] == "NLG Commercial accounts are not covered"
+    assert event.detail["changes"] == {"customer_group_code": ["NL", "OTHER"]}
+    assert db.query(EvidenceFile).filter(EvidenceFile.change_request_id == request.id).count() == 1
+    approve_change(db, actor=ken, request=request)
+    assert agreement.customer_group_code == "OTHER"
 
 
-def test_an_unchanged_agreement_needs_no_reason(db, siobhan, agreement):
-    assert update_agreement(db, actor=siobhan, agreement=agreement, changes={"customer_group_code": "NL"}, reason="", evidence=[]) == {}
+def test_an_unchanged_agreement_proposes_nothing(db, siobhan, agreement):
+    assert propose_agreement_change(db, actor=siobhan, agreement=agreement, changes={"customer_group_code": "NL"},
+                                    reason="", evidence=[]) is None

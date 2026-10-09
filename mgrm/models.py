@@ -215,6 +215,7 @@ class ReviewStatus(StrEnum):
     PROPOSED = "proposed"
     APPROVED = "approved"
     REJECTED = "rejected"
+    WITHDRAWN = "withdrawn"  # by the person who entered it, before review; it never took effect
 
 
 class RebateAgreement(Base):
@@ -257,7 +258,7 @@ class RebateRate(Base):
         CheckConstraint("effective_to IS NULL OR effective_to >= effective_from", name="dates_in_order"),
         CheckConstraint("reviewed_by_id IS NULL OR reviewed_by_id <> entered_by_id", name="four_eyes"),
         CheckConstraint(
-            "status = 'proposed' OR (reviewed_by_id IS NOT NULL AND reviewed_at IS NOT NULL)",
+            "status IN ('proposed', 'withdrawn') OR (reviewed_by_id IS NOT NULL AND reviewed_at IS NOT NULL)",
             name="decision_records_reviewer",
         ),
         CheckConstraint("band_from IS NULL OR band_to IS NULL OR band_to > band_from", name="band_in_order"),
@@ -297,6 +298,7 @@ class EvidenceFile(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     agreement_id: Mapped[int] = mapped_column(ForeignKey("rebate_agreement.id"))
     rate_id: Mapped[int | None] = mapped_column(ForeignKey("rebate_rate.id"))
+    change_request_id: Mapped[int | None] = mapped_column(ForeignKey("rebate_change_request.id"))
     file_name: Mapped[str] = mapped_column(String(255))
     content_type: Mapped[str] = mapped_column(String(100))
     size_bytes: Mapped[int] = mapped_column(Integer)
@@ -305,6 +307,42 @@ class EvidenceFile(Base):
     description: Mapped[str] = mapped_column(Text, default="", server_default="")
     uploaded_by_id: Mapped[int] = mapped_column(ForeignKey("app_user.id"))
     uploaded_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class ChangeKind(StrEnum):
+    DETAILS = "details"  # customer group, brand, products covered, type, basis, accrual
+    END = "end"  # end the agreement: close its rate in force on a date (records are ended, never erased)
+
+
+class RebateChangeRequest(Base):
+    """A proposed change to an agreement other than a new rate. Applied only when someone else approves it.
+
+    `payload` for DETAILS: {"changes": {field: [value when proposed, new value]}};
+    for END: {"rate_id": id of the rate in force, "effective_to": "YYYY-MM-DD"}.
+    """
+
+    __tablename__ = "rebate_change_request"
+    __table_args__ = (
+        CheckConstraint("reviewed_by_id IS NULL OR reviewed_by_id <> entered_by_id", name="four_eyes"),
+        CheckConstraint(
+            "status IN ('proposed', 'withdrawn') OR (reviewed_by_id IS NOT NULL AND reviewed_at IS NOT NULL)",
+            name="decision_records_reviewer",
+        ),
+        CheckConstraint("length(trim(reason)) > 0", name="reason_stated"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    agreement_id: Mapped[int] = mapped_column(ForeignKey("rebate_agreement.id"))
+    kind: Mapped[ChangeKind] = mapped_column(text_enum(ChangeKind, "change_kind"))
+    payload: Mapped[dict] = mapped_column(JSON)
+    reason: Mapped[str] = mapped_column(Text)
+    source_reference: Mapped[str] = mapped_column(Text, default="", server_default="")
+    status: Mapped[ReviewStatus] = mapped_column(text_enum(ReviewStatus, "review_status"), default=ReviewStatus.PROPOSED)
+    entered_by_id: Mapped[int] = mapped_column(ForeignKey("app_user.id"))
+    entered_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    reviewed_by_id: Mapped[int | None] = mapped_column(ForeignKey("app_user.id"))
+    reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    review_note: Mapped[str] = mapped_column(Text, default="", server_default="")
 
 
 class RebateTrueUp(Base):

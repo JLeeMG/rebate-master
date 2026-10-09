@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, Request
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from mgrm.models import AppUser, RebateAgreement, RebateRate, ReviewStatus
+from mgrm.models import AppUser, RebateAgreement, RebateChangeRequest, RebateRate, ReviewStatus
 from mgrm.web.app import render
 from mgrm.web.security import current_user, get_db
 
@@ -18,6 +18,9 @@ def health():
 
 @router.get("/")
 def home(request: Request, user: AppUser = Depends(current_user), db: Session = Depends(get_db)):
-    pending = db.scalar(select(func.count()).select_from(RebateRate).where(RebateRate.status == ReviewStatus.PROPOSED))
+    pending = sum(
+        db.scalar(select(func.count()).select_from(model).where(model.status == ReviewStatus.PROPOSED))
+        for model in (RebateRate, RebateChangeRequest)
+    )
     agreements = db.scalar(select(func.count()).select_from(RebateAgreement))
     return render(request, "home.html", pending=pending, agreements=agreements)
