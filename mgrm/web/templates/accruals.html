@@ -1,0 +1,74 @@
+{% extends "base.html" %}
+{% block title %}Monthly accrual · {{ APP_NAME }}{% endblock %}
+{% block content %}
+<h1>Monthly accrual</h1>
+{% include "_rebate_nav.html" %}
+<form method="get" action="/rebates/accruals" class="grid">
+  <label>Entity <select name="entity">{% for e in entities %}<option value="{{ e.value }}" {{ "selected" if entity == e.value }}>{{ e.value }}</option>{% endfor %}</select></label>
+  <label>Month <input type="month" name="month" value="{{ period.strftime('%Y-%m') }}"></label>
+  <button type="submit">Show</button>
+</form>
+
+<p><strong>{{ entity }} &middot; {{ period.strftime("%B %Y") }}</strong> &middot; approved rates in force on {{ period.strftime("%d %b %Y") }}
+  applied to NetSuite sales (account 40010, net of credit notes) &middot; sales loaded: {{ money(schedule.sales_total) }}</p>
+
+{% if schedule.blockers %}
+<div class="error" role="alert">
+  <p><strong>The journal cannot be prepared until these are resolved:</strong></p>
+  <ul>{% for b in schedule.blockers %}<li>{{ b }}</li>{% endfor %}</ul>
+</div>
+{% endif %}
+{% if schedule.warnings %}
+<div class="notice">
+  <p><strong>For the preparer and reviewer to check:</strong></p>
+  <ul>{% for w in schedule.warnings %}<li>{{ w }}</li>{% endfor %}</ul>
+</div>
+{% endif %}
+
+<table>
+  <thead><tr><th>Agreement</th><th>Customer</th><th>Brand</th><th class="num">Sales in scope</th><th class="num">Rate</th><th class="num">Rebate</th><th>Journal customer</th></tr></thead>
+  <tbody>
+  {% for l in schedule.lines %}
+    <tr class="{{ '' if l.accrue else 'inactive' }}">
+      <td><a href="/rebates/agreement/{{ l.agreement_id }}">{{ l.agreement_code }}</a>{% if not l.accrue %} <span class="muted">(check only)</span>{% endif %}</td>
+      <td>{{ l.customer_label }}</td>
+      <td>{{ l.brand_code }}</td>
+      <td class="num">{{ money(l.sales) }}</td>
+      <td class="num">{{ "%.4g"|format(l.rate * 100) }}%</td>
+      <td class="num">{{ money(l.rebate) }}</td>
+      <td>{{ customers.get(l.journal_customer, "") }}</td>
+    </tr>
+  {% else %}
+    <tr><td colspan="7" class="muted">No agreement has sales in scope this month.</td></tr>
+  {% endfor %}
+  </tbody>
+  <tfoot><tr><th colspan="5">Accrual (check-only agreements excluded)</th><th class="num">{{ money(schedule.accrual) }}</th><th></th></tr></tfoot>
+</table>
+
+{% if can(user.role, Permission.EDIT_REBATES) and not schedule.blockers %}
+<form method="post" action="/rebates/accruals/prepare" class="inline">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  <input type="hidden" name="entity" value="{{ entity }}">
+  <input type="hidden" name="month" value="{{ period.strftime('%Y-%m') }}">
+  <button type="submit">Prepare the journal for review</button>
+</form>
+{% endif %}
+
+<h2>Journals for this month</h2>
+<table>
+  <thead><tr><th>Journal</th><th>Status</th><th class="num">Total</th><th>Prepared by</th><th>Reviewed by</th></tr></thead>
+  <tbody>
+  {% for j in journals %}
+    <tr class="{{ 'inactive' if j.status.value in ('rejected', 'withdrawn') else '' }}">
+      <td><a href="/rebates/journals/{{ j.id }}">{{ j.external_id }}</a></td>
+      <td>{{ j.status.value }}</td>
+      <td class="num">{{ money(j.total) }}</td>
+      <td>{{ names.get(j.entered_by_id, "") }}</td>
+      <td>{{ names.get(j.reviewed_by_id, "") }}</td>
+    </tr>
+  {% else %}
+    <tr><td colspan="5" class="muted">None yet.</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% endblock %}

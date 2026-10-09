@@ -40,7 +40,7 @@
         {% elif e.action in ("rebate.approve", "rebate.reject") %}{{ pct(d.rate) }}{% if d.effective_from %} from {{ d.effective_from }}{% endif %}
         {% elif e.action == "rebate.change_propose" and d.kind == "end" %}last day {{ d.effective_to }} (rate {{ pct(d.rate) }})
         {% elif e.action == "rebate.agreement_create" %}{{ d.customer }} &middot; {{ d.scope }}
-        {% elif e.action in ("rebate.agreement_update", "rebate.change_propose") and d.changes %}{% for k, v in d.changes.items() %}<div>{{ k.replace("_", " ") }}: {{ v[0] }} &rarr; {{ v[1] }}</div>{% endfor %}
+        {% elif e.action in ("rebate.agreement_update", "rebate.change_propose") and d.changes %}{% for k, v in d.changes.items() %}{% if k == "scope" %}<div>what it covers: {{ scope_text(v[0]) }} &rarr; {{ scope_text(v[1]) }}</div>{% else %}<div>{{ k.replace("_", " ") }}: {{ v[0] }} &rarr; {{ v[1] }}</div>{% endif %}{% endfor %}
         {% endif %}
       </td>
       <td>{{ d.reason or d.note or "" }}{% if d.source %}<div class="muted">{{ d.source }}</div>{% endif %}</td>

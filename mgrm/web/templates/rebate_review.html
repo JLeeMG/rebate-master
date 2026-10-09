@@ -50,7 +50,7 @@
   {% for c, a, refusal in change_items %}
     <tr>
       <td><a href="/rebates/agreement/{{ a.id }}">{{ a.entity_code }} &middot; {{ a.customer_label }}</a><div class="muted">{{ a.product_scope }}</div></td>
-      <td>{% if c.kind.value == "end" %}End the agreement on {{ c.payload.effective_to }}{% else %}{% for k, v in c.payload.changes.items() %}<div>{{ k.replace("_", " ") }}: {{ v[0] or "none" }} &rarr; <strong>{{ v[1] or "none" }}</strong></div>{% endfor %}{% endif %}</td>
+      <td>{% if c.kind.value == "end" %}End the agreement on {{ c.payload.effective_to }}{% else %}{% for k, v in c.payload.changes.items() %}{% if k == "scope" %}<div>what it covers: {{ scope_text(v[0]) }} &rarr; <strong>{{ scope_text(v[1]) }}</strong></div>{% else %}<div>{{ k.replace("_", " ") }}: {{ v[0] or "none" }} &rarr; <strong>{{ v[1] or "none" }}</strong></div>{% endif %}{% endfor %}{% endif %}</td>
       <td>{{ names.get(c.entered_by_id, "") }}</td>
       <td>{{ c.reason }}{% if c.source_reference %}<div class="muted">{{ c.source_reference }}</div>{% endif %}</td>
       <td>{% for f in change_evidence.get(c.id, []) %}{% include "_evidence.html" %}{% else %}<span class="muted">none</span>{% endfor %}</td>

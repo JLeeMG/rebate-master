@@ -19,6 +19,7 @@ from sqlalchemy import (
     DateTime,
     Enum,
     ForeignKey,
+    Index,
     Integer,
     LargeBinary,
     MetaData,
@@ -27,6 +28,7 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
     func,
+    text,
 )
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
@@ -184,6 +186,7 @@ class FailedSignIn(Base):
 class LoadKind(StrEnum):
     CUSTOMERS = "customers"
     CLASSES = "classes"
+    TRADING_DETAIL = "trading_detail"  # NetSuite sales by month, customer and class (the rebate base)
     REBATE_WORKBOOK = "rebate_workbook"
     FORECASTING_IMPORT = "forecasting_import"  # the one-time move from the forecasting platform, 8 Oct 2026
 
@@ -204,6 +207,28 @@ class LoadBatch(Base):
     loaded_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     loaded_by_id: Mapped[int | None] = mapped_column(ForeignKey("app_user.id"))
     summary: Mapped[dict] = mapped_column(JSON, default=dict)
+
+
+class SalesLine(Base):
+    """Net sales from the trading detail search: one entity, month, account, class and customer.
+
+    `amount` is credit less debit, so sales are positive and credit notes negative. A newer load
+    replaces the months it covers, because NetSuite periods are not locked.
+    """
+
+    __tablename__ = "sales_line"
+    __table_args__ = (first_of_month("period"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    batch_id: Mapped[int] = mapped_column(ForeignKey("load_batch.id"))
+    entity_code: Mapped[str] = mapped_column(ForeignKey("entity.code"))
+    period: Mapped[date] = mapped_column(Date, index=True)
+    account_code: Mapped[str] = mapped_column(String(16))
+    netsuite_class_id: Mapped[int | None] = mapped_column(Integer)
+    class_name: Mapped[str] = mapped_column(String(200), default="", server_default="")
+    netsuite_customer_id: Mapped[int | None] = mapped_column(Integer)
+    customer_name: Mapped[str] = mapped_column(String(300), default="", server_default="")
+    amount: Mapped[Decimal] = mapped_column(Numeric(20, 2))
 
 
 # ---------------------------------------------------------------- rebate master (spec §4.5, §5.3)
@@ -258,6 +283,9 @@ class RebateAgreement(Base):
     notes: Mapped[str] = mapped_column(Text, default="", server_default="")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     created_by_id: Mapped[int | None] = mapped_column(ForeignKey("app_user.id"))
+    # Exactly which sales the rate applies to: brands, customers, and the customer the journal is tagged with.
+    # Canonical JSON (mgrm.rebates.scope); changed only by an approved change request. None: not yet defined.
+    scope: Mapped[str | None] = mapped_column(Text)
 
 
 class RebateRate(Base):
@@ -409,6 +437,45 @@ class RebateWorkbookMonth(Base):
     period: Mapped[date] = mapped_column(Date)
     sales: Mapped[Decimal] = mapped_column(Numeric(20, 2))
     rebate_due: Mapped[Decimal] = mapped_column(Numeric(20, 2))
+
+
+class RebateJournal(Base):
+    """The month's customer-rebate accrual journal for one entity, as a NetSuite import file.
+
+    Prepared by one person, approved by another (the database refuses the same person). Once
+    decided it cannot be changed; a rejected journal is prepared again as a new one. `lines`
+    holds the journal exactly as approved, and `file_sha256` the fingerprint of those lines. The platform never posts to NetSuite; someone imports the approved file.
+    """
+
+    __tablename__ = "rebate_journal"
+    __table_args__ = (
+        first_of_month("period"),
+        CheckConstraint("reviewed_by_id IS NULL OR reviewed_by_id <> entered_by_id", name="four_eyes"),
+        CheckConstraint(
+            "status IN ('proposed', 'withdrawn') OR (reviewed_by_id IS NOT NULL AND reviewed_at IS NOT NULL)",
+            name="decision_records_reviewer",
+        ),
+        # One live journal per entity and month: another only after the last was rejected or withdrawn.
+        Index("uq_rebate_journal_live", "entity_code", "period", unique=True,
+              postgresql_where=text("status IN ('proposed', 'approved')")),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    entity_code: Mapped[str] = mapped_column(ForeignKey("entity.code"))
+    period: Mapped[date] = mapped_column(Date)
+    external_id: Mapped[str] = mapped_column(String(64))
+    status: Mapped[ReviewStatus] = mapped_column(text_enum(ReviewStatus, "review_status"), default=ReviewStatus.PROPOSED)
+    total: Mapped[Decimal] = mapped_column(Numeric(20, 2))
+    lines: Mapped[list] = mapped_column(JSON)
+    schedule: Mapped[list] = mapped_column(JSON)  # the accrual schedule it was built from, for the reviewer
+    warnings: Mapped[list] = mapped_column(JSON, default=list)
+    sales_batch_ids: Mapped[list] = mapped_column(JSON, default=list)
+    file_sha256: Mapped[str] = mapped_column(String(64))
+    entered_by_id: Mapped[int] = mapped_column(ForeignKey("app_user.id"))
+    entered_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    reviewed_by_id: Mapped[int | None] = mapped_column(ForeignKey("app_user.id"))
+    reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    review_note: Mapped[str] = mapped_column(Text, default="", server_default="")
 
 
 # ---------------------------------------------------------------- the feed

@@ -29,6 +29,7 @@ from sqlalchemy.orm import Session
 from mgrm.auth.roles import Permission, Role, can
 from mgrm.auth.users import audit
 from mgrm.data.files import bytes_sha256
+from mgrm.rebates.scope import parse_scope
 from mgrm.models import (
     AppUser,
     ChangeKind,
@@ -197,7 +198,8 @@ def propose_rate(
     return new
 
 
-AGREEMENT_FIELDS = ("customer_group_code", "brand_code", "product_scope", "rate_type", "basis", "accrual_mode", "agreed_by")
+AGREEMENT_FIELDS = ("customer_group_code", "brand_code", "product_scope", "rate_type", "basis", "accrual_mode", "agreed_by",
+                    "scope")
 
 
 def _plain(value) -> str | None:
@@ -220,6 +222,8 @@ def propose_agreement_change(
 ) -> RebateChangeRequest | None:
     """Propose new details for an agreement. Nothing changes until someone else approves. None if nothing differs."""
     _require_editor(actor)
+    if changes.get("scope") is not None:
+        changes = {**changes, "scope": parse_scope(changes["scope"]).to_text()}  # canonical, or ScopeError
     changed = {k: [_plain(getattr(agreement, k)), _plain(v)] for k, v in changes.items()
                if k in AGREEMENT_FIELDS and _plain(getattr(agreement, k)) != _plain(v)}
     if not changed:

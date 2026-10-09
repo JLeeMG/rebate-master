@@ -7,6 +7,7 @@
   {% if agreement.accrual_mode.value == "check_only" %}&middot; <strong>check only: not accrued</strong>{% endif %}
   &middot; group {{ agreement.customer_group_code or "none" }} &middot; agreement {{ agreement.code }}</p>
 <p class="muted">Source: {{ agreement.source_reference }}</p>
+<p><strong>Exactly what it covers:</strong> {{ scope_text(agreement.scope, customer_names) }}</p>
 
 <h2>Rates</h2>
 <table>
@@ -44,7 +45,7 @@
   <tbody>
   {% for c in changes %}
     <tr class="{{ 'inactive' if c.status.value in ('rejected', 'withdrawn') else '' }}">
-      <td>{% if c.kind.value == "end" %}End the agreement on {{ c.payload.effective_to }}{% else %}{% for k, v in c.payload.changes.items() %}<div>{{ k.replace("_", " ") }}: {{ v[0] or "none" }} &rarr; <strong>{{ v[1] or "none" }}</strong></div>{% endfor %}{% endif %}</td>
+      <td>{% if c.kind.value == "end" %}End the agreement on {{ c.payload.effective_to }}{% else %}{% for k, v in c.payload.changes.items() %}{% if k == "scope" %}<div>what it covers: {{ scope_text(v[0], customer_names) }} &rarr; <strong>{{ scope_text(v[1], customer_names) }}</strong></div>{% else %}<div>{{ k.replace("_", " ") }}: {{ v[0] or "none" }} &rarr; <strong>{{ v[1] or "none" }}</strong></div>{% endif %}{% endfor %}{% endif %}</td>
       <td class="{{ {'approved': 'ok', 'rejected': 'bad'}.get(c.status.value, '') }}">{{ c.status.value }}</td>
       <td>{{ names.get(c.entered_by_id, "") }}<div class="muted">{{ c.entered_at.strftime("%d %b %Y %H:%M") }}</div></td>
       <td>{{ c.reason }}{% if c.source_reference %}<div class="muted">{{ c.source_reference }}</div>{% endif %}</td>
@@ -112,6 +113,26 @@
   <label>Reason for the change <input name="reason" placeholder="required if anything changes"></label>
   <label>Evidence (optional) <input type="file" name="evidence" multiple accept=".pdf,.msg,.eml,.png,.jpg,.jpeg"></label>
   <button type="submit">Propose the change</button>
+</form>
+
+{% set current = parse_scope_safe(agreement.scope) %}
+<h2>Propose exactly what it covers</h2>
+<p class="muted">Which brands and which stores the rate applies to, and which NetSuite customer the journal lines are tagged with
+  (normally the retailer's head-office account its rebate claims are credited to). Brands are brand codes as on the Brands page;
+  stores are NetSuite customer internal IDs. Nothing changes until someone other than you approves it.</p>
+<form method="post" action="/rebates/agreement/{{ agreement.id }}/scope" class="grid">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  <label>Brands
+    <select name="brand_mode">{% for value, label in [("all", "all brands"), ("only", "only these brands"), ("all_but", "all brands except these")] %}<option value="{{ value }}" {{ "selected" if current and current.brand_mode == value }}>{{ label }}</option>{% endfor %}</select>
+  </label>
+  <label>Brand codes (comma separated) <input name="brand_codes" value="{{ current.brand_codes|sort|join(', ') if current else '' }}" placeholder="e.g. MOVA, WITHINGS"></label>
+  <label>Stores
+    <select name="customer_mode">{% for value, label in [("group", "every store in the customer group"), ("only", "only these stores"), ("all_but", "every store in the group except these")] %}<option value="{{ value }}" {{ "selected" if current and current.customer_mode == value }}>{{ label }}</option>{% endfor %}</select>
+  </label>
+  <label>Store customer IDs (comma separated) <input name="customer_ids" value="{{ current.customer_ids|sort|join(', ') if current else '' }}"></label>
+  <label>Journal customer ID <input name="journal_customer" inputmode="numeric" value="{{ current.journal_customer if current and current.journal_customer else '' }}"></label>
+  <label>Reason <input name="reason" required placeholder="e.g. Confirmed with Ken: excludes Mova and Withings"></label>
+  <button type="submit">Propose</button>
 </form>
 
 <h2>End this agreement</h2>

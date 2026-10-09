@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% block title %}Journals · {{ APP_NAME }}{% endblock %}
+{% block content %}
+<h1>Accrual journals</h1>
+{% include "_rebate_nav.html" %}
+<p class="muted">Each month's customer-rebate accrual, one journal per entity. Prepare it from <a href="/rebates/accruals">Monthly accrual</a>;
+  someone other than the preparer approves it; then download the file and import it into NetSuite.</p>
+<table>
+  <thead><tr><th>Month</th><th>Entity</th><th>Journal</th><th>Status</th><th class="num">Total</th><th>Prepared by</th><th>Reviewed by</th></tr></thead>
+  <tbody>
+  {% for j in journals %}
+    <tr class="{{ 'inactive' if j.status.value in ('rejected', 'withdrawn') else '' }}">
+      <td>{{ j.period.strftime("%b %Y") }}</td><td>{{ j.entity_code }}</td>
+      <td><a href="/rebates/journals/{{ j.id }}">{{ j.external_id }}</a></td><td>{{ j.status.value }}</td>
+      <td class="num">{{ "{:,.2f}".format(j.total) }}</td>
+      <td>{{ names.get(j.entered_by_id, "") }}</td><td>{{ names.get(j.reviewed_by_id, "") }}</td>
+    </tr>
+  {% else %}
+    <tr><td colspan="7" class="muted">No journals yet.</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% endblock %}

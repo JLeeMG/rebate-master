@@ -1,0 +1,70 @@
+{% extends "base.html" %}
+{% block title %}{{ journal.external_id }} · {{ APP_NAME }}{% endblock %}
+{% block content %}
+<h1>Accrual journal {{ journal.external_id }}</h1>
+{% include "_rebate_nav.html" %}
+<p>{{ journal.entity_code }} &middot; {{ journal.period.strftime("%B %Y") }} &middot; <strong>{{ journal.status.value }}</strong>
+  &middot; prepared by {{ names.get(journal.entered_by_id, "") }} on {{ journal.entered_at.strftime("%d %b %Y %H:%M") }}
+  {% if journal.reviewed_by_id %}&middot; {{ journal.status.value }} by {{ names.get(journal.reviewed_by_id, "") }} on {{ journal.reviewed_at.strftime("%d %b %Y %H:%M") }}{% endif %}</p>
+{% if journal.review_note %}<p>Reviewer's note: {{ journal.review_note }}</p>{% endif %}
+
+{% if journal.warnings %}
+<div class="notice"><p><strong>Checked by the preparer, for the reviewer:</strong></p>
+  <ul>{% for w in journal.warnings %}<li>{{ w }}</li>{% endfor %}</ul></div>
+{% endif %}
+
+{% if journal.status.value == "approved" %}
+<p><a href="/rebates/journals/{{ journal.id }}/netsuite.csv">Download the NetSuite import file</a>
+  &middot; Import it with Import Journal Entries (CSV). Its External ID stops it being imported twice.</p>
+{% endif %}
+
+<table>
+  <thead><tr><th>Account</th><th class="num">Debit</th><th class="num">Credit</th><th>Brand (class)</th><th>Customer</th><th>Line memo</th></tr></thead>
+  <tbody>
+  {% for l in journal.lines %}
+    <tr>
+      <td>{{ l.account }} {{ l.account_name }}</td>
+      <td class="num">{{ money(l.debit) if l.debit else "" }}</td>
+      <td class="num">{{ money(l.credit) if l.credit else "" }}</td>
+      <td>{{ l["class"] }}</td>
+      <td>{{ l.customer }}</td>
+      <td>{{ l.memo }}</td>
+    </tr>
+  {% endfor %}
+  </tbody>
+  <tfoot><tr><th>Totals {% if debit == credit %}(balanced){% else %}<span class="bad">(NOT balanced)</span>{% endif %}</th>
+    <th class="num">{{ money(debit) }}</th><th class="num">{{ money(credit) }}</th><th colspan="3"></th></tr></tfoot>
+</table>
+
+{% if journal.status.value == "proposed" %}
+  {% if refusal %}
+  <p class="muted">{{ refusal }}</p>
+  {% else %}
+  <h2>Review</h2>
+  <form method="post" action="/rebates/journals/{{ journal.id }}/decision" class="grid">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label>Note (required to reject) <input name="note"></label>
+    <button type="submit" name="decision" value="approve">Approve</button>
+    <button type="submit" name="decision" value="reject" class="secondary">Reject</button>
+  </form>
+  {% endif %}
+  {% if journal.entered_by_id == user.id %}
+  <form method="post" action="/rebates/journals/{{ journal.id }}/withdraw" class="inline">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <button type="submit" class="secondary">Withdraw</button>
+  </form>
+  {% endif %}
+{% endif %}
+
+<h2>The schedule it was built from</h2>
+<table>
+  <thead><tr><th>Agreement</th><th>Customer</th><th>Brand</th><th class="num">Sales in scope</th><th class="num">Rate</th><th class="num">Rebate</th></tr></thead>
+  <tbody>
+  {% for s in journal.schedule %}
+    <tr class="{{ '' if s.accrue else 'inactive' }}"><td><a href="/rebates/agreement/{{ s.agreement_id }}">{{ s.agreement }}</a>{% if not s.accrue %} (check only){% endif %}</td>
+      <td>{{ s.customer }}</td><td>{{ s.brand }}</td><td class="num">{{ money(s.sales) }}</td>
+      <td class="num">{{ "%.4g"|format(s.rate|float * 100) }}%</td><td class="num">{{ money(s.rebate) }}</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% endblock %}

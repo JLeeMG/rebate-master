@@ -5,6 +5,7 @@ can open evidence. Sales amounts recorded by the legacy workbooks are shown
 only to roles with VIEW_SALES.
 """
 
+import re
 from datetime import date
 from decimal import Decimal, InvalidOperation
 from urllib.parse import quote
@@ -22,6 +23,8 @@ from mgrm.models import (
     AccrualMode,
     AppUser,
     AuditEvent,
+    Brand,
+    Customer,
     CustomerGroup,
     EvidenceFile,
     RateType,
@@ -33,6 +36,7 @@ from mgrm.models import (
     RebateWorkbookMonth,
     ReviewStatus,
 )
+from mgrm.rebates.scope import NO_CLASS, ScopeError, make_scope
 from mgrm.rebates.service import (
     MAX_EVIDENCE_BYTES,
     RebateError,
@@ -169,6 +173,7 @@ def _agreement_page(request: Request, db: Session, agreement: RebateAgreement, u
         rate_types=list(RateType), bases=list(RebateBasis), modes=list(AccrualMode),
         evidence=by_rate, change_evidence=by_change, agreement_evidence=by_agreement.get(agreement.id, []),
         changes=changes, today=date.today(),
+        customer_names={c.netsuite_customer_id: c.name for c in db.scalars(select(Customer))},
         show_money=can(user.role, Permission.VIEW_SALES),
         money=lambda v: format_amount(v, currency),
         applied=lambda h: pct((h.rebate_due / h.sales).quantize(RATE_SHOWN)) if h.sales else "",
@@ -276,6 +281,38 @@ async def change_agreement(
     return _agreement_page(request, db, agreement, user,
                            notice="Change proposed. It takes effect once someone else approves it." if proposed
                            else "Nothing was different, so nothing was proposed.")
+
+
+@router.post("/agreement/{agreement_id}/scope", dependencies=[Depends(verify_csrf)])
+def change_scope(
+    request: Request,
+    agreement_id: int,
+    brand_mode: str = Form(...),
+    brand_codes: str = Form(""),
+    customer_mode: str = Form(...),
+    customer_ids: str = Form(""),
+    journal_customer: str = Form(""),
+    reason: str = Form(""),
+    user: AppUser = Depends(editor),
+    db: Session = Depends(get_db),
+):
+    agreement = _get(db, agreement_id)
+    try:
+        ids = [int(i) for i in re.split(r"[,\s]+", customer_ids.strip()) if i]
+        scope = make_scope(brand_mode, re.split(r"\s*,\s*", brand_codes.strip()) if brand_codes.strip() else [],
+                           customer_mode, ids, int(journal_customer) if journal_customer.strip() else None)
+        unknown = sorted(scope.brand_codes - set(db.scalars(select(Brand.code))) - {NO_CLASS})
+        if unknown:
+            raise RebateError(f"Not brand codes on the Brands page: {', '.join(unknown)}.")
+        with db.begin_nested():
+            proposed = propose_agreement_change(db, actor=user, agreement=agreement, changes={"scope": scope.to_text()},
+                                                reason=reason, evidence=[])
+    except ValueError as exc:  # RebateError and ScopeError are ValueErrors; so is a non-number id
+        message = str(exc) if isinstance(exc, (RebateError, ScopeError)) else "Customer IDs must be NetSuite internal ID numbers."
+        return _agreement_page(request, db, agreement, user, 400, error=message)
+    return _agreement_page(request, db, agreement, user,
+                           notice="Proposed. It takes effect once someone else approves it." if proposed
+                           else "That is what it covers already, so nothing was proposed.")
 
 
 @router.post("/agreement/{agreement_id}/end", dependencies=[Depends(verify_csrf)])

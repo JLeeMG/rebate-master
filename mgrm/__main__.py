@@ -187,6 +187,36 @@ def import_from_forecasting(args) -> int:
     return 0 if report.verified else 1
 
 
+def run_backtest(args) -> int:
+    import csv
+    from datetime import date
+
+    from mgrm.rebates.backtest import backtest, summary
+
+    def month(text: str) -> date:
+        year, mon = text.split("-")
+        return date(int(year), int(mon), 1)
+
+    with _session_factory()() as session:
+        rows, problems = backtest(session, month(args.first), month(args.last))
+    with Path(args.out).open("w", newline="", encoding="utf-8") as handle:
+        writer = csv.writer(handle)
+        writer.writerow(["entity", "month", "agreement", "accrue", "scope_defined", "workbook_sales", "platform_sales",
+                         "sales_match", "workbook_rebate", "platform_rebate", "rebate_match"])
+        for r in rows:
+            writer.writerow([r.entity_code, f"{r.period:%Y-%m}", r.agreement_code, r.accrue, r.scope_defined,
+                             r.workbook_sales, r.platform_sales, r.sales_match, r.workbook_rebate, r.platform_rebate,
+                             r.rebate_match])
+    print(f"{'month':12} {'workbook accrual':>18} {'platform':>16} {'difference':>12}  agreements: matched / differ / scope not defined")
+    for (entity, period), s in sorted(summary(rows).items()):
+        print(f"{entity} {period:%Y-%m} {s['workbook']:>18,.2f} {s['platform']:>16,.2f} {s['platform'] - s['workbook']:>12,.2f}"
+              f"  {s['matched']} / {s['differ']} / {s['undefined']}")
+    for problem in sorted(set(problems))[:40]:
+        print(f"NOTE {problem}")
+    print(f"Detail written to {args.out}")
+    return 0
+
+
 def reset_password(args) -> int:
     """For someone locked out. Needs access to the platform's folder on this computer, and records who ran it.
 
@@ -245,7 +275,7 @@ def main(argv: list[str] | None = None) -> int:
     serve_parser.add_argument("--reload", action="store_true", help="restart automatically when code changes")
     serve_parser.set_defaults(fn=serve)
     file_parser = sub.add_parser("load", help="load a NetSuite register CSV export")
-    file_parser.add_argument("kind", choices=["customers", "classes"])
+    file_parser.add_argument("kind", choices=["customers", "classes", "trading_detail"])
     file_parser.add_argument("path")
     file_parser.add_argument("--as", dest="as_user", required=True, help="email of the platform user loading it")
     file_parser.set_defaults(fn=load_file)
@@ -256,6 +286,11 @@ def main(argv: list[str] | None = None) -> int:
     import_parser = sub.add_parser("import-from-forecasting", help="one-time move out of the forecasting platform")
     import_parser.add_argument("--source-url", required=True, help="the forecasting platform's DATABASE_URL")
     import_parser.set_defaults(fn=import_from_forecasting)
+    backtest_parser = sub.add_parser("backtest", help="compare the accrual calculation with the legacy workbooks")
+    backtest_parser.add_argument("first", help="first month, YYYY-MM")
+    backtest_parser.add_argument("last", help="last month, YYYY-MM")
+    backtest_parser.add_argument("--out", required=True, help="CSV file for the agreement-by-agreement comparison")
+    backtest_parser.set_defaults(fn=run_backtest)
     reset_parser = sub.add_parser("reset-password", help="set a new password for a locked-out user")
     reset_parser.add_argument("email")
     reset_parser.set_defaults(fn=reset_password)

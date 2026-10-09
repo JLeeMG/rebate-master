@@ -1,4 +1,5 @@
-"""Loaders for the NetSuite customer and class registers (docs/netsuite-saved-searches.md, searches 4 and 5).
+"""Loaders for the NetSuite exports: the customer and class registers, and the trading detail
+(docs/netsuite-saved-searches.md in the forecasting platform, searches 3, 4 and 5).
 
 The input is the saved search's own CSV export (Results -> Export -> CSV).
 Each loader checks the columns are exactly the ones the search is defined
@@ -15,22 +16,28 @@ import io
 import re
 from collections.abc import Callable
 from dataclasses import dataclass
+from datetime import date
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
 
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
 from mgrm.data.errors import AlreadyLoaded, LoadRejected
 from mgrm.data.files import file_sha256
 from mgrm.domain.entities import Entity
-from mgrm.models import AppUser, Brand, Customer, LoadBatch, LoadKind
+from mgrm.models import AppUser, Brand, Customer, LoadBatch, LoadKind, SalesLine
 
 # The governed searches keep their original ids: they were specified before the split.
 SEARCH_IDS: dict[LoadKind, str] = {
     LoadKind.CUSTOMERS: "customsearch_mgfp_customers",
     LoadKind.CLASSES: "customsearch_mgfp_classes",
+    LoadKind.TRADING_DETAIL: "customsearch_mgfp_trading_detail",
 }
+SALES_ACCOUNT = "40010"  # the rebate base; the search also returns rebates, cost of sales and freight
+TRADING_ACCOUNTS = {"40010", "42010", "42020", "43010", "50010", "51030", "51040", "51080", "55010", "55050"}
+MONTHS = {m: i for i, m in enumerate(["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"], 1)}
+AMOUNT_NOISE = re.compile(r"[()\s,]|[A-Za-z]{0,3}\$")  # brackets, spaces, thousands commas, A$ / NZ$ / US$
 
 ENTITY_BY_SUBSIDIARY = {"macgear au": Entity.MGAU, "macgear nz": Entity.MGNZ}
 TRUE_TEXT = {"yes", "true", "t", "y", "1"}
@@ -63,11 +70,23 @@ COLUMNS: dict[LoadKind, tuple[Column, ...]] = {
         Column("terms", ("Terms",)),
         Column("inactive", ("Inactive",)),
     ),
+    LoadKind.TRADING_DETAIL: (
+        Column("subsidiary", ("Subsidiary", "Subsidiary (no hierarchy)")),
+        Column("period", ("Start Date", "Accounting Period : Start Date", "Accounting Period Fields : Start Date", "Period")),
+        Column("account", ("Number", "Account : Number", "Account Fields : Number", "Account Number")),
+        Column("class", ("Class",)),
+        Column("class_id", ("Class Fields : Internal ID", "Class : Internal ID", "Class Internal ID")),
+        Column("name", ("Name",)),
+        Column("customer_id", ("Customer Fields : Internal ID", "Customer : Internal ID", "Customer Internal ID")),
+        Column("debit", ("Debit Amount", "Amount (Debit)", "Debit")),
+        Column("credit", ("Credit Amount", "Amount (Credit)", "Credit")),
+    ),
 }
 
 
 def _normalise(header: str) -> str:
-    return re.sub(r"[^a-z0-9]+", "", header.strip().lower())
+    text = re.sub(r"^(sum of|group|count of|maximum of|minimum of)\s+", "", header.strip().lower())
+    return re.sub(r"[^a-z0-9]+", "", text)
 
 
 class Problems:
@@ -149,6 +168,42 @@ def parse_flag(text: str) -> bool:
 
 def parse_id(text: str) -> int:
     return int(Decimal(text.strip().replace(",", "")))
+
+
+def parse_optional_id(text: str) -> int | None:
+    text = text.strip()
+    if not text or text in {"- None -", "-"}:
+        return None
+    return parse_id(text)
+
+
+def parse_amount(text: str) -> Decimal:
+    """'1,234.56', '(1,234.56)', '-1234.56', 'A$1,234.56', '' (blank = nil in a summary search)."""
+    cleaned = text.strip()
+    if not cleaned:
+        return Decimal(0)
+    negative = cleaned.startswith("(") and cleaned.endswith(")")
+    value = Decimal(AMOUNT_NOISE.sub("", cleaned))
+    return -value if negative else value
+
+
+def parse_period(text: str) -> date:
+    """'1/04/2026' (day first, as NetSuite is set), '2026-04-01', or 'Apr 2026'. Must be the 1st."""
+    text = text.strip()
+    match = re.fullmatch(r"(\d{1,2})/(\d{1,2})/(\d{4})", text)
+    if match:
+        day, month, year = map(int, match.groups())
+        value = date(year, month, day)
+    elif re.fullmatch(r"\d{4}-\d{2}-\d{2}", text):
+        value = date.fromisoformat(text)
+    else:
+        match = re.fullmatch(r"([A-Za-z]{3})[a-z]* (\d{4})", text)
+        if not match or match.group(1).lower() not in MONTHS:
+            raise ValueError(f"'{text}' is not a date")
+        value = date(int(match.group(2)), MONTHS[match.group(1).lower()], 1)
+    if value.day != 1:
+        raise ValueError(f"'{text}' is not the first day of a month")
+    return value
 
 
 def _field(row: dict, key: str, parser: Callable, problems: Problems, kind: str):
@@ -253,7 +308,44 @@ def load_customers(session: Session, file: FileInput, actor: AppUser | None) -> 
     return batch
 
 
+def load_trading_detail(session: Session, file: FileInput, actor: AppUser | None) -> LoadBatch:
+    """Net sales by entity, month, class and customer. Replaces whatever was held for the months in the file."""
+    problems = Problems()
+    rows = read_csv(file.text, LoadKind.TRADING_DETAIL, problems)
+    lines = []
+    for row in rows:
+        entity = _field(row, "subsidiary", parse_subsidiary, problems, "subsidiary")
+        period = _field(row, "period", parse_period, problems, "period")
+        debit = _field(row, "debit", parse_amount, problems, "amount")
+        credit = _field(row, "credit", parse_amount, problems, "amount")
+        class_id = _field(row, "class_id", parse_optional_id, problems, "internal id")
+        customer_id = _field(row, "customer_id", parse_optional_id, problems, "internal id")
+        account = row["account"].strip()
+        if account not in TRADING_ACCOUNTS:
+            problems.add("account", f"Line {row['_line']}: account '{account}' is not one this search should return")
+        if None in (entity, period, debit, credit) or account != SALES_ACCOUNT:
+            continue  # only sales are the rebate base; the other accounts are checked, not kept
+        lines.append(SalesLine(entity_code=entity.value, period=period, account_code=account, netsuite_class_id=class_id,
+                               class_name=row["class"][:200], netsuite_customer_id=customer_id,
+                               customer_name=row["name"][:300], amount=credit - debit))
+    if problems:
+        raise LoadRejected(file.name, problems.final())
+    if not lines:
+        raise LoadRejected(file.name, [f"The file has no sales (account {SALES_ACCOUNT}) lines."])
+    batch = _new_batch(session, LoadKind.TRADING_DETAIL, file, len(lines), actor)
+    covered = sorted({(line.entity_code, line.period) for line in lines})
+    for entity_code, period in covered:
+        session.execute(delete(SalesLine).where(SalesLine.entity_code == entity_code, SalesLine.period == period))
+    for line in lines:
+        line.batch_id = batch.id
+    session.add_all(lines)
+    batch.summary = {"months": [f"{e} {p:%Y-%m}" for e, p in covered], "sales_lines": len(lines)}
+    session.flush()
+    return batch
+
+
 LOADERS: dict[LoadKind, Callable[[Session, FileInput, AppUser | None], LoadBatch]] = {
     LoadKind.CLASSES: load_classes,
     LoadKind.CUSTOMERS: load_customers,
+    LoadKind.TRADING_DETAIL: load_trading_detail,
 }

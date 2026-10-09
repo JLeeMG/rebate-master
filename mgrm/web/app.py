@@ -15,6 +15,7 @@ from mgrm.auth.roles import ROLE_DESCRIPTIONS, Permission, Role, can
 from mgrm.auth.users import audit
 from mgrm.config import Settings, deployment_problem, get_settings
 from mgrm.db import make_engine, make_session_factory, session_scope
+from mgrm.rebates.scope import describe_text, parse_scope_safe
 from mgrm.web.hardening import Hardening
 from mgrm.web.security import (
     BadFormToken,
@@ -31,7 +32,8 @@ APP_NAME = "MacGear Rebate Master"
 log = logging.getLogger("mgrm.security")
 
 templates = Jinja2Templates(directory=HERE / "templates")
-templates.env.globals.update(can=can, Permission=Permission, Role=Role, ROLE_DESCRIPTIONS=ROLE_DESCRIPTIONS, APP_NAME=APP_NAME)
+templates.env.globals.update(can=can, Permission=Permission, Role=Role, ROLE_DESCRIPTIONS=ROLE_DESCRIPTIONS, APP_NAME=APP_NAME,
+                             scope_text=describe_text, parse_scope_safe=parse_scope_safe)
 
 
 def render(request: Request, name: str, status_code: int = 200, **context):
@@ -96,11 +98,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                       message="That form was out of date, so nothing was changed. Go back, refresh the page and try again.")
 
     from mgrm.api import feed
-    from mgrm.web import routes_admin, routes_auth, routes_main, routes_rebates, routes_registers
+    from mgrm.web import routes_accruals, routes_admin, routes_auth, routes_main, routes_rebates, routes_registers
 
     app.include_router(routes_auth.router)
     app.include_router(routes_main.router)
     app.include_router(routes_rebates.router)
+    app.include_router(routes_accruals.router)
     app.include_router(routes_registers.router)
     app.include_router(routes_admin.router)
     app.include_router(feed.router)

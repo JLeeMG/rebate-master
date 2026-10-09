@@ -15,6 +15,8 @@ PROTECTIONS = {  # trigger: table
     "evidence_file_not_emptied": "evidence_file",
     "rebate_rate_not_emptied": "rebate_rate",
     "rebate_change_request_not_emptied": "rebate_change_request",
+    "rebate_journal_history": "rebate_journal",
+    "rebate_journal_not_emptied": "rebate_journal",
 }
 
 

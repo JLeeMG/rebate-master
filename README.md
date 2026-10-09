@@ -66,6 +66,50 @@ assign a brand's Group Product Manager (or Ken or Siobhan). From then on only
 the assigned approvers may approve that brand's proposals; brands with no
 assigned approver stay with Ken and Siobhan.
 
+## The monthly accrual journal
+
+The Rebate Master builds the month's customer-rebate accrual journal for each
+entity, to replace the one prepared by hand from the reconciliation workbooks.
+
+**What each agreement covers.** Every agreement has an exact rule: which
+brands (all, only some, or all but some), which stores (the whole customer
+group, only some, or all but some), and the NetSuite customer its journal lines
+are tagged with (the retailer's account its claims are credited to). It is set
+on the agreement page under *Propose exactly what it covers* and, like any
+change, takes effect only when someone else approves it. An agreement in force
+without a rule stops the month being journalled.
+
+**Each month:**
+
+1. Load the month's sales: *Load data* → *Sales for the accrual*, using the
+   **MGFP Actuals - Trading Detail by Class and Customer** export. A newer
+   load replaces the months it covers.
+2. Open *Rebates → Monthly accrual*, choose the entity and month. The schedule
+   shows each agreement's sales in scope, rate and rebate, by brand.
+   - **Blockers** (in red) must be cleared first: an agreement without a rule,
+     a rate covering the month still awaiting approval, a tiered rate, or no
+     sales loaded.
+   - **Warnings** are kept with the journal for the reviewer: sales to
+     customers in no group, or a rate that changes part-way through the month.
+     The rate in force on the 1st is used.
+3. *Prepare the journal for review.* One line per agreement and brand, Dr 42010
+   (AU) or 42020 (NZ), tagged with the brand (class) and the retailer's
+   customer, and one Cr 22070 Rebate Accruals for the total. It is not
+   reversed; claims are credited against 22070 as now. Each agreement's rebate
+   is rounded once, as the workbooks round it.
+4. **Someone other than the preparer** opens *Journals*, checks it, and
+   approves or rejects it (with a note). Approved journals cannot be changed.
+5. Download the approved file (*Download the NetSuite import file*) and import
+   it with NetSuite's journal entry import. Its External ID
+   (`MGRM-ACCRUAL-MGAU-2026-09`) stops it being imported twice.
+
+The platform never posts to NetSuite.
+
+**Back-test.** `.venv\Scripts\python.exe -m mgrm backtest 2026-03 2026-08 --out <file.csv>`
+compares the calculation with the workbooks agreement by agreement, using rates
+and rules still awaiting approval. Keep the output on this computer; it holds
+sales figures.
+
 ## The feed (for the forecasting platform)
 
 Read-only, at `/api/v1/customer-groups`, `/api/v1/customers`, `/api/v1/brands`
@@ -90,7 +134,8 @@ In PowerShell, in this folder:
 | Check the platform's database account can only work with rows | `.venv\Scripts\python.exe -m mgrm check-database` |
 | Add the first administrator | `.venv\Scripts\python.exe -m mgrm create-admin` (refused once an administrator exists; add others under *Admin → Users*) |
 | Give someone who forgot their password a temporary one | `.venv\Scripts\python.exe -m mgrm reset-password <their email>`. They choose their own at their next sign-in. Recorded in the audit log with the Windows user who ran it; a deactivated account stays off |
-| Load a NetSuite register export | `.venv\Scripts\python.exe -m mgrm load customers <file.csv> --as <your email>` (or `classes`), or *Load data* in the platform |
+| Load a NetSuite export | `.venv\Scripts\python.exe -m mgrm load customers <file.csv> --as <your email>` (or `classes`, or `trading_detail` for the month's sales), or *Load data* in the platform |
+| Back-test the accrual against the workbooks | `.venv\Scripts\python.exe -m mgrm backtest 2026-03 2026-08 --out <file.csv>` |
 
 ## First-time installation
 

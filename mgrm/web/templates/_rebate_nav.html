@@ -4,5 +4,6 @@
   <a href="/rebates/change-log">Change log</a>
   <a href="/rebates/expiry">Expiry and renewal</a>
   <a href="/rebates/rate-card">Rate cards</a>
+  {% if can(user.role, Permission.VIEW_SALES) %}<a href="/rebates/accruals">Monthly accrual</a> <a href="/rebates/journals">Journals</a>{% endif %}
   {% if can(user.role, Permission.MANAGE_USERS) %}<a href="/rebates/approvers">Brand approvers</a>{% endif %}
 </p>

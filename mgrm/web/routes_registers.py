@@ -31,6 +31,7 @@ RECENT_LOADS = 50
 UPLOAD_KINDS = {
     "customers": "Customer register (CSV from the MGFP Register - Customers search)",
     "classes": "Class register (CSV from the MGFP Register - Classes search)",
+    "trading_detail": "Sales for the accrual (CSV from the MGFP Actuals - Trading Detail by Class and Customer search)",
     "rebate_workbook": "Rebate reconciliation workbook (.xlsx; first load only)",
 }
 
