@@ -310,11 +310,16 @@ def load_customers(session: Session, file: FileInput, actor: AppUser | None) -> 
     return batch
 
 
-def load_trading_detail(session: Session, file: FileInput, actor: AppUser | None) -> LoadBatch:
-    """Net sales by entity, month, class and customer. Replaces whatever was held for the months in the file."""
+def load_trading_detail(session: Session, file: FileInput, actor: AppUser | None, today: date | None = None) -> LoadBatch:
+    """Net sales by entity, month, class and customer. Replaces whatever was held for the months in the file.
+
+    Anything already posted to a month after the current one is set aside and noted, never kept as sales.
+    """
     problems = Problems()
     rows = read_csv(file.text, LoadKind.TRADING_DETAIL, problems)
     lines = []
+    this_month = (today or date.today()).replace(day=1)
+    ahead: dict[str, Decimal] = {}
     for row in rows:
         entity = _field(row, "subsidiary", parse_subsidiary, problems, "subsidiary")
         period = _field(row, "period", parse_period, problems, "period")
@@ -327,6 +332,10 @@ def load_trading_detail(session: Session, file: FileInput, actor: AppUser | None
             problems.add("account", f"Line {row['_line']}: account '{account}' is not one this search should return")
         if None in (entity, period, debit, credit) or account != SALES_ACCOUNT:
             continue  # only sales are the rebate base; the other accounts are checked, not kept
+        if period > this_month:
+            key = f"{entity.value} {period:%b %Y}"
+            ahead[key] = ahead.get(key, Decimal(0)) + credit - debit
+            continue
         lines.append(SalesLine(entity_code=entity.value, period=period, account_code=account, netsuite_class_id=class_id,
                                class_name=row["class"][:200], netsuite_customer_id=customer_id,
                                customer_name=row["name"][:300], amount=credit - debit))
@@ -341,7 +350,8 @@ def load_trading_detail(session: Session, file: FileInput, actor: AppUser | None
     for line in lines:
         line.batch_id = batch.id
     session.add_all(lines)
-    batch.summary = {"months": [f"{e} {p:%Y-%m}" for e, p in covered], "sales_lines": len(lines)}
+    batch.summary = {"months": [f"{e} {p:%Y-%m}" for e, p in covered], "sales_lines": len(lines),
+                     "notes": [f"{k}: sales of {v:,.2f} posted ahead, not loaded" for k, v in sorted(ahead.items())]}
     session.flush()
     return batch
 

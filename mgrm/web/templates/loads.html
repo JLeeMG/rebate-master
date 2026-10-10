@@ -41,6 +41,8 @@
         {% if b.summary.get("new_classes") %}{{ b.summary.new_classes }} new classes (not brands until marked){% endif %}
         {% if b.summary.get("new_customers") %}{{ b.summary.new_customers }} new customers (no group yet){% endif %}
         {% if b.summary.get("agreements") %}{{ b.summary.agreements }} agreements, {{ b.summary.proposed_rates }} proposed rates{% endif %}
+        {% if b.summary.get("sales_lines") %}{{ b.summary.sales_lines }} sales lines, {{ b.summary.months|length }} entity-months{% endif %}
+        {% for n in b.summary.get("notes", []) %}<div class="muted">{{ n }}</div>{% endfor %}
       </td>
     </tr>
   {% else %}

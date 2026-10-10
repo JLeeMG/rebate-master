@@ -180,6 +180,14 @@ def test_netsuites_overall_total_row_is_skipped_only_at_the_end(db, people, pb):
     assert any("Overall Total" in p for p in misplaced.value.problems)
 
 
+def test_sales_posted_to_future_months_are_set_aside(db, people, pb):
+    rows = pb_june_rows() + [["MacGear NZ", "1/11/2026", "40010", "BONELK", CLASS_IDS["BONELK"], "PB Tech Albany", PB_STORE, "", "500"]]
+    content = trading_csv(rows)
+    batch = load_trading_detail(db, FileInput("ahead.csv", content, "ahead"), people["siobhan"], today=date(2026, 10, 10))
+    assert batch.summary["notes"] == ["MGNZ Nov 2026: sales of 500.00 posted ahead, not loaded"]
+    assert db.query(SalesLine).filter(SalesLine.period > date(2026, 10, 1)).count() == 0
+
+
 def test_brand_shares_add_up_to_the_agreement_rounded_once():
     from mgrm.rebates.accrual import split_rebate
 
