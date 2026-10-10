@@ -1,6 +1,9 @@
-"""Brand review packs: each brand owner (GPM) checks the rebate agreements on their brands, in Excel.
+"""Brand review packs: each brand owner checks the rebate agreements on their brands, in Excel.
 
-While the platform is used by Finance only, owners don't sign in. Finance sends each GPM a workbook
+A brand owner is the Group Product Manager, or whoever holds that responsibility; packs and screens use
+each person's own title (e.g. Product Manager Lead - NZ), never a generic one.
+
+While the platform is used by Finance only, owners don't sign in. Finance sends each owner a workbook
 listing every agreement that touches their brands (including retailer-wide agreements that cover
 them), with the rate in force, any change awaiting approval, and their brands' sales at that
 retailer. They answer three columns: Correct? (Y/N), Correct rate (%), Comment.
@@ -67,10 +70,10 @@ class PackLine:
 
 
 def owners(session: Session) -> dict[str, dict]:
-    """GPM email -> {name, brands, pm emails}."""
+    """Owner email -> {name, title, brands, cc (PM emails), notes}."""
     out: dict[str, dict] = {}
     for b in session.scalars(select(Brand).where(Brand.gpm_email != "").order_by(Brand.code)):
-        entry = out.setdefault(b.gpm_email, {"name": b.gpm_name, "brands": [], "cc": set(), "notes": {}})
+        entry = out.setdefault(b.gpm_email, {"name": b.gpm_name, "title": b.gpm_title, "brands": [], "cc": set(), "notes": {}})
         entry["brands"].append(b.code)
         if b.pm_email and b.pm_email != b.gpm_email:
             entry["cc"].add(b.pm_email)
@@ -150,7 +153,8 @@ def build_pack(session: Session, gpm_email: str, actor: AppUser | None, today: d
     wb = openpyxl.Workbook()
     ws = wb.active
     ws.title = SHEET
-    ws["A1"] = f"Rebate agreements on your brands: please check - {owner['name']}"
+    who = owner["name"] + (f", {owner['title']}" if owner["title"] else "")
+    ws["A1"] = f"Rebate agreements on your brands: please check - {who}"
     ws["A1"].font = Font(bold=True, size=14)
     ws["A2"] = (f"Your brands: {', '.join(owner['brands'])}. Rates as at {today:%d %b %Y}; sales are the 12 months to "
                 f"{month_end(last):%d %b %Y}, in each entity's currency.")
@@ -211,7 +215,7 @@ def build_pack(session: Session, gpm_email: str, actor: AppUser | None, today: d
             "refs": [line.agreement.code for line in lines]}
     about["A1"] = "MacGear Rebate Master - brand review pack"
     about["A1"].font = Font(bold=True)
-    about["A2"] = f"For {owner['name']} ({gpm_email.lower()}), issued {issued:%d %b %Y %H:%M} UTC by Finance."
+    about["A2"] = f"For {who} ({gpm_email.lower()}), issued {issued:%d %b %Y %H:%M} UTC by Finance."
     about["A3"] = "Notes held for your brands:"
     for i, (code, note) in enumerate(sorted(owner["notes"].items()), start=4):
         about[f"A{i}"] = f"{code}: {note}"

@@ -49,7 +49,8 @@ ROLE_DESCRIPTIONS: dict[Role, str] = {
     ),
     Role.REBATE_REVIEWER: "Approves or rejects rate changes entered by someone else.",
     Role.BRAND_APPROVER: (
-        "Approves rate changes for the brands assigned to them (e.g. a Group Product Manager). Reads everything else."
+        "For a brand owner (e.g. a Group Product Manager): approves rate changes for the brands assigned to them. "
+        "Reads everything else."
     ),
     Role.VIEWER: "Reads agreements, rates, rate cards and the change log. Changes nothing.",
 }

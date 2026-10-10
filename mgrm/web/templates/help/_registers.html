@@ -11,17 +11,17 @@
 </ul>
 
 <h2 id="owners">Brand owners and review packs</h2>
-<p>Each brand's Group Product Manager (GPM) checks the rebate agreements on their brands, in Excel. This gives them no access to the platform.</p>
+<p>Each brand's owner (the Group Product Manager, or whoever holds that responsibility, e.g. the Product Manager Lead - NZ) checks the rebate agreements on their brands, in Excel. Packs and screens use each person's own title. This gives them no access to the platform.</p>
 <ol>
-  <li><strong>Owners:</strong> keep the <em>Brand owners</em> workbook (brand code, GPM and PM names and emails, notes) and load it under
+  <li><strong>Owners:</strong> keep the <em>Brand owners</em> workbook (brand code, the owner's and the PM's names and emails, the owner's title, notes) and load it under
     <strong>Load data</strong> &rarr; <em>Brand owners</em>. Brands &rarr; <em>Brand owners and review packs</em> shows who has what.</li>
   {% if P.EDIT_REBATES in may and P.VIEW_SALES in may %}
-  <li><strong>Send:</strong> Brands &rarr; <em>Download review pack</em> for each GPM, and email it to them, copying the PMs listed. The pack lists every
+  <li><strong>Send:</strong> Brands &rarr; <em>Download review pack</em> for each brand owner, and email it to them, copying the PMs listed. The pack lists every
     agreement on their brands, including retailer-wide ones that cover them, with the rate in force, any change awaiting approval,
     and their brands' sales at that retailer over the last 12 months.</li>
   <li><strong>They answer</strong> three yellow columns: <em>Correct? (Y/N)</em>, <em>Correct rate (%)</em> and <em>Comment</em>, and email it back.</li>
   <li><strong>Load the reply:</strong> Load data &rarr; <em>A returned brand review pack</em>. Confirmations are recorded against each agreement;
     corrections and comments are listed on the Load data page, and the returned workbook is attached as evidence to those agreements.</li>
-  <li><strong>Act on corrections</strong> as ordinary proposals on the agreement (the GPM's workbook is already there as evidence); someone else approves them.</li>
+  <li><strong>Act on corrections</strong> as ordinary proposals on the agreement (the owner's workbook is already there as evidence); someone else approves them.</li>
   {% endif %}
 </ol>

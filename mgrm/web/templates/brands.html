@@ -10,26 +10,26 @@
 {% set can_edit = can(user.role, Permission.MANAGE_REGISTERS) %}
 
 <h2>Brand owners and review packs</h2>
-<p class="muted">Who checks each brand's rebate agreements: the Group Product Manager (GPM), with the Product Manager (PM) copied.
+<p class="muted">Who checks each brand's rebate agreements: its brand owner (shown with their own title), with the Product Manager (PM) copied.
   This gives them no access to the platform. {% if can_edit %}To change owners, edit the Brand owners workbook and load it under Load data.{% endif %}</p>
 {% if owners %}
 <table>
-  <thead><tr><th>GPM</th><th>Brands</th><th>Copy to (PM)</th>{% if can_issue %}<th></th>{% endif %}</tr></thead>
+  <thead><tr><th>Brand owner</th><th>Brands</th><th>Copy to (PM)</th>{% if can_issue %}<th></th>{% endif %}</tr></thead>
   <tbody>
   {% for email, o in owners.items() %}
-    <tr><td>{{ o.name }}<div class="muted">{{ email }}</div></td><td>{{ o.brands|join(", ") }}</td><td>{{ o.cc|sort|join(", ") }}</td>
+    <tr><td>{{ o.name }}{% if o.title %}, {{ o.title }}{% endif %}<div class="muted">{{ email }}</div></td><td>{{ o.brands|join(", ") }}</td><td>{{ o.cc|sort|join(", ") }}</td>
       {% if can_issue %}<td><a href="/brands/review-pack?owner={{ email|urlencode }}">Download review pack</a></td>{% endif %}</tr>
   {% endfor %}
   </tbody>
 </table>
-{% if can_issue %}<p class="muted">Email each GPM their pack (copy the PMs). When it comes back, load it under Load data as <em>A returned brand review pack</em>.</p>{% endif %}
+{% if can_issue %}<p class="muted">Email each brand owner their pack (copy the PMs). When it comes back, load it under Load data as <em>A returned brand review pack</em>.</p>{% endif %}
 {% else %}
 <p class="muted">No brand owners loaded yet.</p>
 {% endif %}
 
 <h2>All classes</h2>
 <table>
-  <thead><tr><th>Class</th><th>Code</th><th class="num">NetSuite ID</th><th>Brand?</th><th>Tier</th><th>GPM / PM</th>{% if can_edit %}<th>Reason for a change</th><th></th>{% endif %}</tr></thead>
+  <thead><tr><th>Class</th><th>Code</th><th class="num">NetSuite ID</th><th>Brand?</th><th>Tier</th><th>Owner / PM</th>{% if can_edit %}<th>Reason for a change</th><th></th>{% endif %}</tr></thead>
   <tbody>
   {% for b in brands %}
     <tr class="{{ 'inactive' if b.is_inactive else '' }}">

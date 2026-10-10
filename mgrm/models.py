@@ -97,6 +97,7 @@ class Brand(Base):
     # Who reviews this brand's rebate agreements (reference only: it gives no access to the platform).
     gpm_name: Mapped[str] = mapped_column(String(100), default="", server_default="")
     gpm_email: Mapped[str] = mapped_column(String(254), default="", server_default="")
+    gpm_title: Mapped[str] = mapped_column(String(100), default="", server_default="")  # their actual title
     pm_name: Mapped[str] = mapped_column(String(100), default="", server_default="")
     pm_email: Mapped[str] = mapped_column(String(254), default="", server_default="")
     owner_notes: Mapped[str] = mapped_column(Text, default="", server_default="")

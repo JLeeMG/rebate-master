@@ -36,7 +36,7 @@ UPLOAD_KINDS = {
     "customers": "Customer register (CSV from the MGFP Register - Customers search)",
     "classes": "Class register (CSV from the MGFP Register - Classes search)",
     "trading_detail": "Sales for the accrual (CSV from the MGRM Rebates - Recent Sales by Class and Customer search)",
-    "brand_owners": "Brand owners: GPM and PM for each brand (.xlsx)",
+    "brand_owners": "Brand owners: owner, their title, and PM for each brand (.xlsx)",
     "review_return": "A returned brand review pack (.xlsx)",
     "rebate_workbook": "Rebate reconciliation workbook (.xlsx; first load only)",
 }

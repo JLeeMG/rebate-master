@@ -50,6 +50,24 @@ def test_owners_load_and_every_change_is_recorded(owned, db):
     assert db.scalar(select(AuditEvent).where(AuditEvent.action == "brand.owner", AuditEvent.subject == "BONELK")) is not None
 
 
+def test_packs_use_each_owners_actual_title(owned, db, people, tmp_path):
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "Brand owners"
+    ws.append(["Brand code", "GPM name", "GPM email", "GPM title", "PM name", "PM email", "Notes"])
+    ws.append(["BONELK", "David Vanderkley", "david@macgeargroup.com", "Product Manager Lead - NZ", "", "", ""])
+    path = tmp_path / "titles.xlsx"
+    wb.save(path)
+    load_brand_owners(db, path, people["siobhan"])
+    _, content = build_pack(db, "david@macgeargroup.com", people["siobhan"], today=JULY)
+    title = openpyxl.load_workbook(io.BytesIO(content), read_only=True)["Review"]["A1"].value
+    assert title.endswith("David Vanderkley, Product Manager Lead - NZ")
+    # A later file without the title column keeps the title on record
+    later = [GPMS[0][:9] + ["Kenneth supports; reviewed Oct 2026"]] + GPMS[1:]
+    load_brand_owners(db, owners_file(tmp_path, later, "again.xlsx"), people["siobhan"])
+    assert db.scalar(select(Brand).where(Brand.code == "BONELK")).gpm_title == "Product Manager Lead - NZ"
+
+
 @pytest.mark.parametrize(("row", "problem"), [
     (["BONELK", "", "", 0, 0, "Dave", "dave@gmail.com", "", "", ""], "not a MacGear email"),
     (["BONELK", "", "", 0, 0, "Dave", "", "", "", ""], "go together"),

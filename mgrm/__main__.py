@@ -217,7 +217,7 @@ def review_packs(args) -> int:
         for email, owner in owners(session).items():
             name, content = build_pack(session, email, actor)
             (out / name).write_bytes(content)
-            print(f"WROTE   {name}: {owner['name']} <{email}>, {len(owner['brands'])} brands; copy {', '.join(sorted(owner['cc'])) or 'nobody'}")
+            print(f"WROTE   {name}: {owner['name']}{', ' + owner['title'] if owner['title'] else ''} <{email}>, {len(owner['brands'])} brands; copy {', '.join(sorted(owner['cc'])) or 'nobody'}")
         session.commit()
     return 0
 
@@ -344,7 +344,7 @@ def main(argv: list[str] | None = None) -> int:
     import_parser = sub.add_parser("import-from-forecasting", help="one-time move out of the forecasting platform")
     import_parser.add_argument("--source-url", required=True, help="the forecasting platform's DATABASE_URL")
     import_parser.set_defaults(fn=import_from_forecasting)
-    owners_parser = sub.add_parser("load-brand-owners", help="load the Brand owners workbook (GPM and PM per brand)")
+    owners_parser = sub.add_parser("load-brand-owners", help="load the Brand owners workbook (owner, title and PM per brand)")
     owners_parser.add_argument("path")
     owners_parser.add_argument("--as", dest="as_user", required=True, help="email of the platform user loading it")
     owners_parser.set_defaults(fn=load_owners)

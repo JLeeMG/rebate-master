@@ -21,8 +21,9 @@ from mgrm.models import AppUser, Brand, LoadBatch, LoadKind
 SHEET = "Brand owners"
 COLUMNS = {"Brand code": "code", "GPM name": "gpm_name", "GPM email": "gpm_email", "PM name": "pm_name",
            "PM email": "pm_email", "Notes": "owner_notes"}
+OPTIONAL_COLUMNS = {"GPM title": "gpm_title"}  # the owner's actual title; kept as it is if the column is absent
 EMAIL = re.compile(r"^[^@\s]+@macgeargroup\.com$", re.IGNORECASE)
-OWNER_FIELDS = ("gpm_name", "gpm_email", "pm_name", "pm_email", "owner_notes")
+OWNER_FIELDS = ("gpm_name", "gpm_email", "gpm_title", "pm_name", "pm_email", "owner_notes")
 
 
 def _text(value) -> str:
@@ -48,6 +49,7 @@ def read_owners(path: Path) -> tuple[dict[str, dict[str, str]], list[str]]:
     if missing:
         return {}, [f"missing column: {name}" for name in missing]
     at = {COLUMNS[name]: header.index(name) for name in COLUMNS}
+    at |= {field: header.index(name) for name, field in OPTIONAL_COLUMNS.items() if name in header}
     owners, problems = {}, []
     for number, row in enumerate(rows[1:], start=2):
         values = {field: _text(row[i]) if i < len(row) else "" for field, i in at.items()}
@@ -85,6 +87,7 @@ def load_brand_owners(session: Session, path: Path, actor: AppUser | None) -> Lo
     changed = 0
     for code, values in owners.items():
         brand = known[code]
+        values = {"gpm_title": brand.gpm_title if values["gpm_email"] == brand.gpm_email else "", **values}
         old = {f: getattr(brand, f) for f in OWNER_FIELDS}
         if old != values:
             audit(session, actor, "brand.owner", code, old={k: v for k, v in old.items() if k != "owner_notes"},
