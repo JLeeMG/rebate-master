@@ -18,7 +18,9 @@ The rules, in one place:
 Every step is written to the audit log with who, when, what and why.
 """
 
+import io
 import re
+import zipfile
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
@@ -28,7 +30,7 @@ from sqlalchemy.orm import Session
 
 from mgrm.auth.roles import Permission, Role, can
 from mgrm.auth.users import audit
-from mgrm.data.files import bytes_sha256
+from mgrm.data.files import MAX_WORKBOOK_UNPACKED_BYTES, bytes_sha256
 from mgrm.rebates.scope import parse_scope
 from mgrm.models import (
     AppUser,
@@ -48,6 +50,7 @@ FILE_NAME_LENGTH = 255
 
 # What evidence may be, recognised by the file's own first bytes, not its name.
 PDF, OLE2, PNG, JPEG = b"%PDF-", b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1", b"\x89PNG\r\n\x1a\n", b"\xff\xd8\xff"
+ZIP = b"PK\x03\x04"
 EMAIL_HEADERS = (b"received:", b"from:", b"return-path:", b"mime-version:", b"date:", b"message-id:", b"subject:", b"to:")
 
 
@@ -84,10 +87,21 @@ def evidence_type(upload: Upload) -> str:
         return "image/jpeg"
     if name.endswith(".eml") and content[:2000].lower().lstrip().startswith(EMAIL_HEADERS):
         return "message/rfc822"
+    if content.startswith(ZIP) and name.endswith(".xlsx") and _is_workbook(content):
+        return "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"  # e.g. a returned brand review pack
     raise RebateError(
-        f"'{upload.file_name}' is not a PDF, an Outlook email (.msg), a saved email (.eml) or a picture. "
-        "Save the email as PDF and attach that."
+        f"'{upload.file_name}' is not a PDF, an Outlook email (.msg), a saved email (.eml), a picture or an Excel "
+        "workbook (.xlsx). Save the email as PDF and attach that."
     )
+
+
+def _is_workbook(content: bytes) -> bool:
+    try:
+        with zipfile.ZipFile(io.BytesIO(content)) as archive:
+            names = archive.namelist()
+            return "xl/workbook.xml" in names and sum(i.file_size for i in archive.infolist()) <= MAX_WORKBOOK_UNPACKED_BYTES
+    except zipfile.BadZipFile:
+        return False
 
 
 def attach_evidence(

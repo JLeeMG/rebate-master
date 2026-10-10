@@ -8,8 +8,28 @@
   This list is the master; the forecasting platform reads it.
 </p>
 {% set can_edit = can(user.role, Permission.MANAGE_REGISTERS) %}
+
+<h2>Brand owners and review packs</h2>
+<p class="muted">Who checks each brand's rebate agreements: the Group Product Manager (GPM), with the Product Manager (PM) copied.
+  This gives them no access to the platform. {% if can_edit %}To change owners, edit the Brand owners workbook and load it under Load data.{% endif %}</p>
+{% if owners %}
 <table>
-  <thead><tr><th>Class</th><th>Code</th><th class="num">NetSuite ID</th><th>Brand?</th><th>Tier</th>{% if can_edit %}<th>Reason for a change</th><th></th>{% endif %}</tr></thead>
+  <thead><tr><th>GPM</th><th>Brands</th><th>Copy to (PM)</th>{% if can_issue %}<th></th>{% endif %}</tr></thead>
+  <tbody>
+  {% for email, o in owners.items() %}
+    <tr><td>{{ o.name }}<div class="muted">{{ email }}</div></td><td>{{ o.brands|join(", ") }}</td><td>{{ o.cc|sort|join(", ") }}</td>
+      {% if can_issue %}<td><a href="/brands/review-pack?owner={{ email|urlencode }}">Download review pack</a></td>{% endif %}</tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% if can_issue %}<p class="muted">Email each GPM their pack (copy the PMs). When it comes back, load it under Load data as <em>A returned brand review pack</em>.</p>{% endif %}
+{% else %}
+<p class="muted">No brand owners loaded yet.</p>
+{% endif %}
+
+<h2>All classes</h2>
+<table>
+  <thead><tr><th>Class</th><th>Code</th><th class="num">NetSuite ID</th><th>Brand?</th><th>Tier</th><th>GPM / PM</th>{% if can_edit %}<th>Reason for a change</th><th></th>{% endif %}</tr></thead>
   <tbody>
   {% for b in brands %}
     <tr class="{{ 'inactive' if b.is_inactive else '' }}">
@@ -24,6 +44,7 @@
             {% for t in tiers %}<option value="{{ t.value }}" {{ "selected" if b.forecast_tier == t }}>{{ t.value.replace("_", "-") }}</option>{% endfor %}
           </select>
         </td>
+        <td>{{ b.gpm_name }}{% if b.pm_name and b.pm_name != b.gpm_name %} / {{ b.pm_name }}{% endif %}</td>
         <td><input form="brand-{{ b.id }}" name="reason" aria-label="Reason for changing {{ b.name }}"></td>
         <td>
           <form id="brand-{{ b.id }}" method="post" action="/brands/{{ b.id }}" class="inline">
@@ -34,10 +55,11 @@
       {% else %}
         <td>{{ "yes" if b.is_brand else "no" }}</td>
         <td>{{ b.forecast_tier.value.replace("_", "-") if b.forecast_tier else "" }}</td>
+        <td>{{ b.gpm_name }}{% if b.pm_name and b.pm_name != b.gpm_name %} / {{ b.pm_name }}{% endif %}</td>
       {% endif %}
     </tr>
   {% else %}
-    <tr><td colspan="7" class="muted">No classes loaded yet. Load the class register under Load data.</td></tr>
+    <tr><td colspan="8" class="muted">No classes loaded yet. Load the class register under Load data.</td></tr>
   {% endfor %}
   </tbody>
 </table>

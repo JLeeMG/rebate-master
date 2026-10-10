@@ -12,6 +12,7 @@ SECTIONS = {
     "Reviewing someone else's proposal": {Role.REBATE_MAINTAINER, Role.REBATE_REVIEWER, Role.BRAND_APPROVER},
     "The monthly accrual journal": {Role.ADMIN, Role.REBATE_MAINTAINER, Role.REBATE_EDITOR, Role.REBATE_REVIEWER},
     "Customers, customer groups and brands": {Role.ADMIN, Role.REBATE_MAINTAINER, Role.REBATE_EDITOR},
+    "Download review pack": {Role.ADMIN, Role.REBATE_MAINTAINER, Role.REBATE_EDITOR},
     "Finding things": set(Role),
     "For everyone": set(Role),
 }

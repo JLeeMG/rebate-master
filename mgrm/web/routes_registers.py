@@ -6,21 +6,25 @@ import tempfile
 from pathlib import Path
 from urllib.parse import urlencode
 
-from fastapi import APIRouter, Depends, File, Form, Request, UploadFile
-from fastapi.responses import RedirectResponse
+from urllib.parse import quote
+
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
+from fastapi.responses import RedirectResponse, Response
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from mgrm.auth.roles import Permission, can
 from mgrm.auth.users import audit
+from mgrm.data.brand_owners import load_brand_owners
 from mgrm.data.errors import AlreadyLoaded, LoadRejected
 from mgrm.data.files import MAX_UPLOAD_BYTES
+from mgrm.rebates.brand_review import build_pack, load_return, owners
 from mgrm.data.rebate_workbooks import load_workbook
 from mgrm.data.registers import LOADERS, FileInput
 from mgrm.domain.entities import TRADING_ENTITIES
 from mgrm.models import AppUser, Brand, Customer, CustomerGroup, ForecastTier, LoadBatch, LoadKind
 from mgrm.web.app import render
-from mgrm.web.security import get_db, require, verify_csrf
+from mgrm.web.security import NotPermitted, get_db, require, verify_csrf
 
 router = APIRouter()
 reader = require(Permission.VIEW)
@@ -32,8 +36,11 @@ UPLOAD_KINDS = {
     "customers": "Customer register (CSV from the MGFP Register - Customers search)",
     "classes": "Class register (CSV from the MGFP Register - Classes search)",
     "trading_detail": "Sales for the accrual (CSV from the MGRM Rebates - Recent Sales by Class and Customer search)",
+    "brand_owners": "Brand owners: GPM and PM for each brand (.xlsx)",
+    "review_return": "A returned brand review pack (.xlsx)",
     "rebate_workbook": "Rebate reconciliation workbook (.xlsx; first load only)",
 }
+WORKBOOK_KINDS = {"brand_owners", "review_return", "rebate_workbook"}
 
 
 def _decode(raw: bytes, name: str) -> str:
@@ -73,15 +80,24 @@ async def upload(
     if len(raw) > MAX_UPLOAD_BYTES:
         return _loads_page(request, db, 400, error=f"{name} is larger than {MAX_UPLOAD_BYTES // (1024 * 1024)} MB, "
                            "far larger than any NetSuite export or reconciliation workbook. Nothing was loaded.")
+    notice = None
     try:
         with db.begin_nested():
-            if kind == "rebate_workbook":
-                if not can(user.role, Permission.EDIT_REBATES):
+            if kind in WORKBOOK_KINDS:
+                if kind != "brand_owners" and not can(user.role, Permission.EDIT_REBATES):
                     raise LoadRejected(name, ["Your role does not enter rebate agreements."])
                 with tempfile.TemporaryDirectory() as folder:
                     path = Path(folder) / re.sub(r"[^\w .&()-]", "_", name)
                     path.write_bytes(raw)
-                    batch = load_workbook(db, path, user)
+                    if kind == "rebate_workbook":
+                        batch = load_workbook(db, path, user)
+                    elif kind == "brand_owners":
+                        batch = load_brand_owners(db, path, user)
+                    else:
+                        batch, result = load_return(db, path, user)
+                        notice = (f"{result.owner}: {len(result.confirmed)} confirmed, {len(result.corrections)} to correct, "
+                                  f"{len(result.comments)} comments, {len(result.unanswered)} unanswered. Corrections and "
+                                  "comments are listed below; enter any change as a proposal on the agreement.")
             else:
                 batch = LOADERS[LoadKind(kind)](db, FileInput(name, _decode(raw, name), hashlib.sha256(raw).hexdigest()), user)
             audit(db, user, "data.load", name, kind=kind, batch=batch.id, rows=batch.row_count)
@@ -90,7 +106,7 @@ async def upload(
     except LoadRejected as exc:
         audit(db, user, "data.load_rejected", name, kind=kind, problems=len(exc.problems))
         return _loads_page(request, db, 400, rejected=exc)
-    return _loads_page(request, db, notice=f"Loaded {name}: {batch.row_count} rows (load {batch.id}).")
+    return _loads_page(request, db, notice=notice or f"Loaded {name}: {batch.row_count} rows (load {batch.id}).")
 
 
 # ---------------------------------------------------------------- brands
@@ -99,7 +115,21 @@ async def upload(
 @router.get("/brands")
 def brands(request: Request, user: AppUser = Depends(reader), db: Session = Depends(get_db)):
     rows = db.scalars(select(Brand).order_by(Brand.is_brand.desc(), Brand.is_inactive, Brand.name)).all()
-    return render(request, "brands.html", brands=rows, tiers=list(ForecastTier))
+    return render(request, "brands.html", brands=rows, tiers=list(ForecastTier), owners=owners(db),
+                  can_issue=can(user.role, Permission.EDIT_REBATES) and can(user.role, Permission.VIEW_SALES))
+
+
+@router.get("/brands/review-pack")
+def review_pack(owner: str, user: AppUser = Depends(require(Permission.EDIT_REBATES)), db: Session = Depends(get_db)):
+    """One owner's review pack, as an Excel workbook to email them."""
+    if not can(user.role, Permission.VIEW_SALES):
+        raise NotPermitted(Permission.VIEW_SALES)
+    try:
+        name, content = build_pack(db, owner, user)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return Response(content, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    headers={"Content-Disposition": f"attachment; filename*=UTF-8''{quote(name)}"})
 
 
 @router.post("/brands/{brand_id}", dependencies=[Depends(verify_csrf)])

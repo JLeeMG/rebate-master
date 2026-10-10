@@ -187,6 +187,64 @@ def import_from_forecasting(args) -> int:
     return 0 if report.verified else 1
 
 
+def load_owners(args) -> int:
+    from mgrm.data.brand_owners import load_brand_owners
+    from mgrm.data.errors import AlreadyLoaded, LoadRejected
+
+    with _session_factory()() as session:
+        actor = _user(session, args.as_user)
+        try:
+            batch = load_brand_owners(session, Path(args.path), actor)
+            session.commit()
+        except AlreadyLoaded as exc:
+            print(f"SKIPPED {exc}")
+            return 0
+        except LoadRejected as exc:
+            session.rollback()
+            print(exc.report())
+            return 1
+    print(f"LOADED  {batch.file_name}: {batch.summary}")
+    return 0
+
+
+def review_packs(args) -> int:
+    from mgrm.rebates.brand_review import build_pack, owners
+
+    out = Path(args.out)
+    out.mkdir(parents=True, exist_ok=True)
+    with _session_factory()() as session:
+        actor = _user(session, args.as_user)
+        for email, owner in owners(session).items():
+            name, content = build_pack(session, email, actor)
+            (out / name).write_bytes(content)
+            print(f"WROTE   {name}: {owner['name']} <{email}>, {len(owner['brands'])} brands; copy {', '.join(sorted(owner['cc'])) or 'nobody'}")
+        session.commit()
+    return 0
+
+
+def load_review(args) -> int:
+    from mgrm.data.errors import AlreadyLoaded, LoadRejected
+    from mgrm.rebates.brand_review import load_return
+
+    with _session_factory()() as session:
+        actor = _user(session, args.as_user)
+        try:
+            batch, result = load_return(session, Path(args.path), actor)
+            session.commit()
+        except AlreadyLoaded as exc:
+            print(f"SKIPPED {exc}")
+            return 0
+        except LoadRejected as exc:
+            session.rollback()
+            print(exc.report())
+            return 1
+    print(f"LOADED  {batch.file_name}: {result.owner} confirmed {len(result.confirmed)}, "
+          f"corrections {len(result.corrections)}, comments {len(result.comments)}, unanswered {len(result.unanswered)}")
+    for note in batch.summary["notes"]:
+        print(f"        {note}")
+    return 0
+
+
 def run_backtest(args) -> int:
     import csv
     from datetime import date
@@ -286,6 +344,18 @@ def main(argv: list[str] | None = None) -> int:
     import_parser = sub.add_parser("import-from-forecasting", help="one-time move out of the forecasting platform")
     import_parser.add_argument("--source-url", required=True, help="the forecasting platform's DATABASE_URL")
     import_parser.set_defaults(fn=import_from_forecasting)
+    owners_parser = sub.add_parser("load-brand-owners", help="load the Brand owners workbook (GPM and PM per brand)")
+    owners_parser.add_argument("path")
+    owners_parser.add_argument("--as", dest="as_user", required=True, help="email of the platform user loading it")
+    owners_parser.set_defaults(fn=load_owners)
+    packs_parser = sub.add_parser("review-packs", help="write every brand owner's review pack (.xlsx) to a folder")
+    packs_parser.add_argument("--out", required=True, help="folder for the packs (keep it on this computer)")
+    packs_parser.add_argument("--as", dest="as_user", required=True, help="email of the platform user issuing them")
+    packs_parser.set_defaults(fn=review_packs)
+    review_parser = sub.add_parser("load-review", help="load a brand owner's returned review pack")
+    review_parser.add_argument("path")
+    review_parser.add_argument("--as", dest="as_user", required=True, help="email of the platform user loading it")
+    review_parser.set_defaults(fn=load_review)
     backtest_parser = sub.add_parser("backtest", help="compare the accrual calculation with the legacy workbooks")
     backtest_parser.add_argument("first", help="first month, YYYY-MM")
     backtest_parser.add_argument("last", help="last month, YYYY-MM")

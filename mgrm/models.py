@@ -94,6 +94,12 @@ class Brand(Base):
     forecast_tier: Mapped[ForecastTier | None] = mapped_column(text_enum(ForecastTier, "forecast_tier"))
     notes: Mapped[str] = mapped_column(Text, default="", server_default="")
     is_inactive: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
+    # Who reviews this brand's rebate agreements (reference only: it gives no access to the platform).
+    gpm_name: Mapped[str] = mapped_column(String(100), default="", server_default="")
+    gpm_email: Mapped[str] = mapped_column(String(254), default="", server_default="")
+    pm_name: Mapped[str] = mapped_column(String(100), default="", server_default="")
+    pm_email: Mapped[str] = mapped_column(String(254), default="", server_default="")
+    owner_notes: Mapped[str] = mapped_column(Text, default="", server_default="")
 
 
 class CustomerGroup(Base):
@@ -187,6 +193,8 @@ class LoadKind(StrEnum):
     CUSTOMERS = "customers"
     CLASSES = "classes"
     TRADING_DETAIL = "trading_detail"  # NetSuite sales by month, customer and class (the rebate base)
+    BRAND_OWNERS = "brand_owners"  # who reviews each brand's agreements (GPM / PM)
+    REVIEW_RETURN = "review_return"  # a brand owner's answers to their review pack
     REBATE_WORKBOOK = "rebate_workbook"
     FORECASTING_IMPORT = "forecasting_import"  # the one-time move from the forecasting platform, 8 Oct 2026
 
