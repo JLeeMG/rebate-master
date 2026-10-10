@@ -106,7 +106,8 @@ def test_the_pack_shows_owners_only_what_they_need(owned, db, people):
     assert review.column_dimensions["A"].hidden  # the agreement reference
     assert wb["About this pack"].sheet_state == "veryHidden"
     text = " ".join(str(c.value) for ws in wb.worksheets for row in ws.iter_rows() for c in row if c.value)
-    for internal in ("journal", "Kenneth supports", "Source", "Accrued", "awaiting approval"):
+    for internal in ("journal", "Kenneth supports", "Source", "Accrued", "awaiting approval", "approved by Finance",
+                     "platform", "Rebate Master"):
         assert internal not in text, internal  # Finance's notes and working columns stay with Finance
 
 

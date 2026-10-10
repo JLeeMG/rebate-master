@@ -158,12 +158,14 @@ def build_pack(session: Session, gpm_email: str, actor: AppUser | None, today: d
     ws = wb.active
     ws.title = SHEET
     who = owner["name"] + (f", {owner['title']}" if owner["title"] else "")
-    ws["A1"] = f"Rebate agreements on your brands: please check - {who}"
+    ws["A1"] = f"Customer rebates on your brands: review - {who}"
     ws["A1"].font = Font(bold=True, size=14)
-    ws["A2"] = (f"Your brands: {', '.join(owner['brands'])}. Rates as at {today:%d %b %Y}; sales are the 12 months to "
-                f"{month_end(last):%d %b %Y}, in each entity's currency.")
+    ws["A2"] = (f"A review to make sure we have everything as it should be. Your brands: {', '.join(owner['brands'])}. "
+                f"Rates as recorded on {today:%d %b %Y}; sales are the 12 months to {month_end(last):%d %b %Y}, "
+                "in each entity's currency.")
     ws["A3"] = ("For each line: Correct? Y or N. If N, put the right rate and say why in Comment (e.g. the retailer's "
-                "email). Comment on anything else you know (e.g. a brand that should be excluded). Then save and email it back.")
+                "email). Note anything missing or different, e.g. a brand that should be excluded or an agreement not "
+                "listed. Then save and email it back.")
     ws["A4"] = "Only the three yellow columns can be changed. Please don't add, remove or re-order rows."
     for cell in ("A2", "A3", "A4"):
         ws[cell].alignment = Alignment(wrap_text=False)
@@ -176,11 +178,11 @@ def build_pack(session: Session, gpm_email: str, actor: AppUser | None, today: d
         cell.fill = yellow if name in ANSWERS else grey
     for i, line in enumerate(lines, start=HEADER_ROW + 1):
         a = line.agreement
-        shown = line.rate or line.pending  # after Finance's approval, always the rate in force
+        shown = line.rate or line.pending  # the rate in force; the latest recorded one if none is approved yet
         values = [
             a.code, a.entity_code, a.customer_label, ", ".join(line.brands), line.scope_text,
             TYPE_NAMES.get(a.rate_type.value, a.rate_type.value),
-            _pct(shown.rate) + ("" if line.rate else " (not yet approved by Finance)"),
+            _pct(shown.rate),
             shown.effective_from, float(line.sales), None, None, None,
         ]
         for col, value in enumerate(values, start=1):
@@ -219,7 +221,7 @@ def build_pack(session: Session, gpm_email: str, actor: AppUser | None, today: d
     issued = datetime.now(UTC)
     meta = {"owner": gpm_email.lower(), "issued": issued.isoformat(), "brands": owner["brands"],
             "refs": [line.agreement.code for line in lines]}
-    about["A1"] = "MacGear Rebate Master - brand review pack"
+    about["A1"] = "Customer rebate review"
     about["A2"] = f"For {who}, issued {issued:%d %b %Y %H:%M} UTC by Finance."
     about["A31"] = json.dumps(meta)
     about.sheet_state = "veryHidden"
