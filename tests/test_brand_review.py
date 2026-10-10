@@ -90,12 +90,24 @@ def test_each_owner_gets_the_agreements_on_their_brands(owned, db, people, pb):
     _, content = build_pack(db, "david@macgeargroup.com", people["siobhan"], today=JULY)
     rows = pack_rows(content)
     assert [r["Ref"] for r in rows] == ["MGNZ-PBT-2"]  # Bonelk and Satechi at 10%; the 5% line excludes Bonelk
-    assert rows[0]["Your brands it covers"] == "BONELK" and rows[0]["Rate in force"] == "10%"
+    assert rows[0]["Your brands"] == "BONELK" and rows[0]["Rate"] == "10%" and rows[0]["Type"] == "Rebate"
+    assert rows[0]["What the agreement covers"] == "Only BONELK, SATECHI"  # no journal tagging, no internal ids
     assert rows[0]["Your brands' sales, last 12 months"] == pytest.approx(61390.95)
     # Twelve South is covered by the retailer-wide 5% line ("all brands except ...")
     _, content = build_pack(db, "r.harris@macgeargroup.com", people["siobhan"], today=JULY)
     assert [r["Ref"] for r in pack_rows(content)] == ["MGNZ-PBT-1"]
     assert db.scalar(select(AuditEvent).where(AuditEvent.action == "review_pack.issue")) is not None
+
+
+def test_the_pack_shows_owners_only_what_they_need(owned, db, people):
+    _, content = build_pack(db, "david@macgeargroup.com", people["siobhan"], today=JULY)
+    wb = openpyxl.load_workbook(io.BytesIO(content))
+    review = wb["Review"]
+    assert review.column_dimensions["A"].hidden  # the agreement reference
+    assert wb["About this pack"].sheet_state == "veryHidden"
+    text = " ".join(str(c.value) for ws in wb.worksheets for row in ws.iter_rows() for c in row if c.value)
+    for internal in ("journal", "Kenneth supports", "Source", "Accrued", "awaiting approval"):
+        assert internal not in text, internal  # Finance's notes and working columns stay with Finance
 
 
 def answered(content: bytes, tmp_path, answers: dict[str, tuple], name="returned.xlsx"):

@@ -70,6 +70,19 @@ class Scope:
         return f"{brands}; {customers}; journal tagged to {tagged}"
 
 
+def describe_for_owner(scope: Scope, customer_names: dict[int, str]) -> str:
+    """What an agreement covers, in words for a brand owner: brands, and stores only if not the whole retailer."""
+    brands = {"all": "All brands", "only": "Only ", "all_but": "All brands except "}[scope.brand_mode]
+    if scope.brand_mode != "all":
+        brands += ", ".join(sorted(scope.brand_codes))
+    stores = sorted(customer_names.get(i, "a store") for i in scope.customer_ids)
+    if scope.customer_mode == "only":
+        return f"{brands}; only at {', '.join(stores)}"
+    if scope.customer_mode == "all_but":
+        return f"{brands}; all stores except {', '.join(stores)}"
+    return brands
+
+
 def make_scope(brand_mode: str, brand_codes, customer_mode: str = "group", customer_ids=(),
                journal_customer: int | None = None) -> Scope:
     codes = frozenset(c.strip().upper() for c in brand_codes if str(c).strip())

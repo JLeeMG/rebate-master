@@ -23,6 +23,7 @@ from pathlib import Path
 
 import openpyxl
 from openpyxl.styles import Alignment, Font, PatternFill, Protection
+from openpyxl.utils import get_column_letter
 from openpyxl.worksheet.datavalidation import DataValidation
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
@@ -31,7 +32,6 @@ from mgrm.auth.users import audit
 from mgrm.data.errors import AlreadyLoaded, LoadRejected
 from mgrm.data.files import file_sha256, workbook_problem
 from mgrm.models import (
-    AccrualMode,
     AppUser,
     Brand,
     Customer,
@@ -44,15 +44,17 @@ from mgrm.models import (
     SalesLine,
 )
 from mgrm.rebates.accrual import month_end
-from mgrm.rebates.scope import ScopeError, parse_scope
+from mgrm.rebates.scope import ScopeError, describe_for_owner, parse_scope
 from mgrm.rebates.service import Upload, attach_evidence, rate_in_force
 
 SHEET = "Review"
 ABOUT = "About this pack"
 HEADER_ROW = 6
-COLUMNS = ["Ref", "Entity", "Retailer", "Your brands it covers", "What the agreement covers", "Type", "Accrued?",
-           "Rate in force", "Since", "Until", "Change awaiting approval", "Source", "Your brands' sales, last 12 months",
-           "Correct? (Y/N)", "Correct rate (%)", "Comment"]
+# What a brand owner sees. "Ref" (the agreement code) is hidden: it matches their answers back, nothing more.
+COLUMNS = ["Ref", "Entity", "Retailer", "Your brands", "What the agreement covers", "Type", "Rate", "From",
+           "Your brands' sales, last 12 months", "Correct? (Y/N)", "Correct rate (%)", "Comment"]
+TYPE_NAMES = {"rebate": "Rebate", "damage": "Damage allowance", "settlement": "Settlement discount", "co_op": "Co-op",
+              "mdf": "Marketing (MDF)"}
 ANSWERS = ("Correct? (Y/N)", "Correct rate (%)", "Comment")
 SALES_MONTHS = 12
 CURRENCY = {"MGAU": "A$", "MGNZ": "NZ$"}
@@ -92,7 +94,9 @@ def pack_lines(session: Session, brands: list[str], today: date | None = None) -
     last = _last_closed_month(today)
     first = date(last.year - 1 + (last.month == 12), last.month % 12 + 1, 1)
     code_of = {b.netsuite_class_id: b.code for b in session.scalars(select(Brand)) if b.netsuite_class_id is not None}
-    group_of = {c.netsuite_customer_id: c.customer_group_code for c in session.scalars(select(Customer))}
+    customers = session.scalars(select(Customer)).all()
+    group_of = {c.netsuite_customer_id: c.customer_group_code for c in customers}
+    store_names = {c.netsuite_customer_id: c.name for c in customers}
     sales: dict[tuple[str, str, str], Decimal] = defaultdict(Decimal)  # (entity, group, brand) -> 12 months' sales
     for class_id, customer_id, entity, amount in session.execute(
             select(SalesLine.netsuite_class_id, SalesLine.netsuite_customer_id, SalesLine.entity_code, func.sum(SalesLine.amount))
@@ -131,7 +135,7 @@ def pack_lines(session: Session, brands: list[str], today: date | None = None) -
         pending = max((r for r in rates[a.id] if r.status is ReviewStatus.PROPOSED), key=lambda r: r.id, default=None)
         if in_force is None and pending is None:
             continue  # ended, or never in force
-        lines.append(PackLine(a, covered, scope.describe() if scope else a.product_scope, a.scope is not None,
+        lines.append(PackLine(a, covered, describe_for_owner(scope, store_names) if scope else a.product_scope, a.scope is not None,
                               in_force, pending,
                               sum((sales.get((a.entity_code, a.customer_group_code, b), Decimal(0)) for b in covered), Decimal(0))))
     return lines
@@ -172,19 +176,16 @@ def build_pack(session: Session, gpm_email: str, actor: AppUser | None, today: d
         cell.fill = yellow if name in ANSWERS else grey
     for i, line in enumerate(lines, start=HEADER_ROW + 1):
         a = line.agreement
+        shown = line.rate or line.pending  # after Finance's approval, always the rate in force
         values = [
-            a.code, a.entity_code, a.customer_label, ", ".join(line.brands),
-            line.scope_text + ("" if line.scope_confirmed else " (awaiting approval)"),
-            a.rate_type.value, "Yes" if a.accrual_mode is AccrualMode.ACCRUE else "No (check only)",
-            _pct(line.rate.rate) if line.rate else "none approved yet",
-            line.rate.effective_from if line.rate else None, line.rate.effective_to if line.rate else None,
-            (f"{_pct(line.pending.rate)} from {line.pending.effective_from:%d %b %Y}" if line.pending else ""),
-            (line.rate or line.pending).source_reference,
-            float(line.sales),
-            None, None, None,
+            a.code, a.entity_code, a.customer_label, ", ".join(line.brands), line.scope_text,
+            TYPE_NAMES.get(a.rate_type.value, a.rate_type.value),
+            _pct(shown.rate) + ("" if line.rate else " (not yet approved by Finance)"),
+            shown.effective_from, float(line.sales), None, None, None,
         ]
         for col, value in enumerate(values, start=1):
             cell = ws.cell(row=i, column=col, value=value)
+            cell.alignment = Alignment(wrap_text=True, vertical="top")
             if COLUMNS[col - 1] in ANSWERS:
                 cell.fill = yellow
                 cell.protection = Protection(locked=False)
@@ -193,35 +194,35 @@ def build_pack(session: Session, gpm_email: str, actor: AppUser | None, today: d
         ws.cell(row=i, column=COLUMNS.index("Your brands' sales, last 12 months") + 1).number_format = \
             f'"{CURRENCY[a.entity_code]}"#,##0;-"{CURRENCY[a.entity_code]}"#,##0;-'
     last_row = HEADER_ROW + max(len(lines), 1)
+    first_answer = get_column_letter(COLUMNS.index(ANSWERS[0]) + 1)
+    rate_answer = get_column_letter(COLUMNS.index(ANSWERS[1]) + 1)
     yes_no = DataValidation(type="list", formula1='"Y,N"', allow_blank=True, error="Y or N", showErrorMessage=True)
     ws.add_data_validation(yes_no)
-    yes_no.add(f"N{HEADER_ROW + 1}:N{last_row}")
+    yes_no.add(f"{first_answer}{HEADER_ROW + 1}:{first_answer}{last_row}")
     rate = DataValidation(type="decimal", operator="between", formula1="0", formula2="100", allow_blank=True,
                           error="A percentage between 0 and 100, e.g. 17.5", showErrorMessage=True)
     ws.add_data_validation(rate)
-    rate.add(f"O{HEADER_ROW + 1}:O{last_row}")
-    for col, width in zip("ABCDEFGHIJKLMNOP", (26, 7, 22, 22, 46, 10, 12, 11, 12, 12, 20, 34, 16, 10, 11, 40)):
-        ws.column_dimensions[col].width = width
+    rate.add(f"{rate_answer}{HEADER_ROW + 1}:{rate_answer}{last_row}")
+    widths = {"Ref": 4, "Entity": 7, "Retailer": 22, "Your brands": 20, "What the agreement covers": 40, "Type": 16,
+              "Rate": 12, "From": 12, "Your brands' sales, last 12 months": 16, "Correct? (Y/N)": 10,
+              "Correct rate (%)": 11, "Comment": 45}
+    for col, name in enumerate(COLUMNS, start=1):
+        ws.column_dimensions[get_column_letter(col)].width = widths[name]
+    ws.column_dimensions["A"].hidden = True  # the agreement reference: needed to read the reply, not to review
     ws.freeze_panes = ws.cell(row=HEADER_ROW + 1, column=4)
     ws.protection.sheet = True  # no password: it guards against accidents, not people
-    ws.protection.formatColumns = False
     ws.protection.sort = True
     ws.protection.autoFilter = False
-    ws.auto_filter.ref = f"A{HEADER_ROW}:P{last_row}"
+    ws.auto_filter.ref = f"A{HEADER_ROW}:{get_column_letter(len(COLUMNS))}{last_row}"
 
-    about = wb.create_sheet(ABOUT)
+    about = wb.create_sheet(ABOUT)  # the pack's own reference, for reading the reply; never shown to the owner
     issued = datetime.now(UTC)
     meta = {"owner": gpm_email.lower(), "issued": issued.isoformat(), "brands": owner["brands"],
             "refs": [line.agreement.code for line in lines]}
     about["A1"] = "MacGear Rebate Master - brand review pack"
-    about["A1"].font = Font(bold=True)
-    about["A2"] = f"For {who} ({gpm_email.lower()}), issued {issued:%d %b %Y %H:%M} UTC by Finance."
-    about["A3"] = "Notes held for your brands:"
-    for i, (code, note) in enumerate(sorted(owner["notes"].items()), start=4):
-        about[f"A{i}"] = f"{code}: {note}"
-    about["A30"] = "Please leave this cell as it is:"
+    about["A2"] = f"For {who}, issued {issued:%d %b %Y %H:%M} UTC by Finance."
     about["A31"] = json.dumps(meta)
-    about.sheet_state = "visible"
+    about.sheet_state = "veryHidden"
     out = io.BytesIO()
     wb.save(out)
     audit(session, actor, "review_pack.issue", gpm_email.lower(), agreements=len(lines), brands=owner["brands"])
@@ -268,7 +269,8 @@ def read_return(path: Path) -> tuple[ReviewResult | None, list[str]]:
         if not ref:
             continue
         refs.append(ref)
-        answer, rate, comment = (row[13], row[14], str(row[15] or "").strip())
+        answer, rate, comment = (row[COLUMNS.index(ANSWERS[0])], row[COLUMNS.index(ANSWERS[1])],
+                                 str(row[COLUMNS.index(ANSWERS[2])] or "").strip())
         answer = str(answer or "").strip().upper()[:1]
         given = None
         if rate not in (None, ""):
