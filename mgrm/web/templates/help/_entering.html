@@ -1,0 +1,34 @@
+<h2 id="entering">Entering a change</h2>
+<p>Everything you enter is a <strong>proposal</strong>. Nothing changes until someone <strong>other than you</strong> approves it in Review.
+  The platform, and the database behind it, refuse anyone approving their own entry.
+  {% if shown == Role.ADMIN %}As administrator you can enter changes but not approve anything; the rebate team approves.{% endif %}</p>
+
+<table>
+  <thead><tr><th>To</th><th>Go to</th><th>You give</th></tr></thead>
+  <tbody>
+    <tr><td><strong>Add an agreement</strong></td><td>Agreements &rarr; <em>Add an agreement</em></td>
+        <td>Entity, customer, group, brand, products, type, the first rate and its start date, the reason, the source, and the evidence.</td></tr>
+    <tr><td><strong>Change a rate</strong></td><td>Open the agreement &rarr; <em>Propose a rate change</em></td>
+        <td>The new rate, the date it starts (and ends, if it does), the reason, the source, and the evidence. On approval the old rate closes the day before; nothing is overwritten.</td></tr>
+    <tr><td><strong>Set exactly what it covers</strong></td><td>Open the agreement &rarr; <em>Propose exactly what it covers</em></td>
+        <td>Brands (all, only these, or all except these), stores (the whole customer group, only these, or all except these), and the NetSuite customer its journal lines are tagged with (the retailer's account its claims are credited to). Brand codes are in the <em>Code</em> column of the Brands page; stores are the <em>Internal ID</em> column of the Customers page. An agreement with no rule stops the monthly journal.</td></tr>
+    <tr><td><strong>Change other details</strong></td><td>Open the agreement &rarr; <em>Propose a change to the agreement's details</em></td>
+        <td>Customer group, brand, products covered, type, basis, accrued or check only, agreed by; and the reason.</td></tr>
+    <tr><td><strong>End an agreement</strong></td><td>Open the agreement &rarr; <em>End this agreement</em></td>
+        <td>The last day it applies, and the reason. Nothing is deleted: the agreement and its history stay.</td></tr>
+    <tr><td><strong>Add evidence</strong></td><td>Open the agreement &rarr; <em>Add evidence</em></td>
+        <td>A file for the agreement in general, or for a rate you proposed that is still awaiting review.</td></tr>
+    <tr><td><strong>Take back a proposal</strong></td><td>The agreement page or Review &rarr; <em>Withdraw</em></td>
+        <td>Only your own, and only before it is reviewed. The record of it stays.</td></tr>
+  </tbody>
+</table>
+
+<h3>Evidence</h3>
+<ul>
+  <li>A rate always needs evidence: the retailer's email saved as PDF, the Outlook email (.msg), a saved email (.eml), or a screenshot. Up to 20 MB each.</li>
+  <li>In Outlook: open the email &rarr; <em>File &rarr; Save As</em> &rarr; <em>Outlook Message Format (.msg)</em>, or <em>Print &rarr; Microsoft Print to PDF</em>.</li>
+  <li>Evidence is fingerprinted when uploaded and can never be changed or removed. To correct it, attach another file.</li>
+</ul>
+
+<h3>Good reasons and sources</h3>
+<p>Write them for someone reading the change log in two years: <em>"FY27 trading terms renewal"</em> and <em>"Email from JB category manager, 14 Aug 2026"</em>, not <em>"update"</em>.</p>

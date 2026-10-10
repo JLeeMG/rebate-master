@@ -130,8 +130,8 @@ def prepare_journal(session: Session, *, actor: AppUser, entity_code: str, perio
 
 
 def journal_refusal(actor: AppUser, journal: RebateJournal) -> str | None:
-    if not can(actor.role, Permission.APPROVE_REBATES):
-        return "Your role does not approve journals."
+    if not (can(actor.role, Permission.APPROVE_REBATES) and can(actor.role, Permission.VIEW_SALES)):
+        return "Your role does not approve journals."  # a brand approver approves rates but sees no sales
     if journal.status is not ReviewStatus.PROPOSED:
         return f"This journal has already been {journal.status.value}."
     if journal.entered_by_id == actor.id:

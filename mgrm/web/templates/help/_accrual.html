@@ -1,0 +1,46 @@
+<h2 id="accrual">The monthly accrual journal</h2>
+<p>Each month the platform works out the customer-rebate accrual from NetSuite sales and produces the journal for NetSuite, one per entity.
+  One person prepares it and another approves it.
+  {% if P.EDIT_REBATES in may and P.APPROVE_REBATES in may %}You can do either, but never both for the same journal.
+  {% elif P.EDIT_REBATES in may %}You prepare it; a rebate approver approves it.
+  {% else %}You approve journals someone else prepared.{% endif %}</p>
+
+{% if P.MANAGE_REGISTERS in may %}
+<h3>1. Load the month's sales (after month end)</h3>
+<ol>
+  <li>In NetSuite: <em>Lists &rarr; Search &rarr; Saved Searches</em> &rarr; <strong>MGRM Rebates - Recent Sales by Class and Customer</strong> &rarr; <em>View</em> &rarr; the <em>Export - CSV</em> icon. Don't open and re-save it in Excel.</li>
+  <li>Also export <strong>MGFP Register - Customers</strong> if new stores have opened.</li>
+  <li>Here: <strong>Load data</strong> &rarr; load the customer register first, then <em>Sales for the accrual</em>. The file is checked in full before anything is saved.</li>
+  <li>New customers arrive without a group. Put them in their retailer's group on <strong>Customers</strong>, or their sales count towards no rebate.</li>
+</ol>
+{% endif %}
+
+<h3>{{ "2. " if P.MANAGE_REGISTERS in may }}Check the schedule</h3>
+<ol>
+  <li>Open <strong>Monthly accrual</strong>, choose the entity and month, click <em>Show</em>.</li>
+  <li>The schedule lists each agreement's sales in scope, its rate and the rebate, brand by brand. Check-only agreements are shown in grey and not accrued.</li>
+  <li><strong>Red: must be fixed first.</strong> An agreement with no rule for what it covers, a rate for the month still awaiting approval, a tiered rate, or no sales loaded.</li>
+  <li><strong>Yellow: check and judge.</strong> Sales to customers in no group, or a rate that changes part-way through the month (the rate in force on the 1st is used). These travel with the journal for the reviewer.</li>
+</ol>
+
+{% if P.EDIT_REBATES in may %}
+<h3>3. Prepare the journal</h3>
+<p>When nothing is red, click <em>Prepare the journal for review</em>. It shows one debit line per agreement and brand (42010 for AU, 42020 for NZ), tagged with the brand and the retailer's customer, and one credit to 22070 Rebate Accruals for the total. A prepared journal can't be edited: if something is wrong, <em>Withdraw</em> it, fix the cause, and prepare it again.</p>
+{% endif %}
+
+{% if P.APPROVE_REBATES in may %}
+<h3>4. Approve it (someone other than the preparer)</h3>
+<ol>
+  <li>Open <strong>Journals</strong> and the journal awaiting review.</li>
+  <li>Check: it balances; the total is in line with last month and the sales; the yellow notes are acceptable; spot-check a few lines against the schedule below it.</li>
+  <li><strong>Approve</strong>, or <strong>Reject</strong> with a note. Approved journals are locked.</li>
+</ol>
+{% endif %}
+
+<h3>5. Import it into NetSuite</h3>
+<ol>
+  <li>On the approved journal, click <em>Download the NetSuite import file</em>.</li>
+  <li>In NetSuite: <em>Setup &rarr; Import/Export &rarr; Import CSV Records</em> &rarr; <em>Transactions</em> &rarr; <em>Journal Entry</em>, choose the file, and map the columns (the first time only; save the mapping for next month).</li>
+  <li>The journal's External ID (e.g. MGRM-ACCRUAL-MGAU-2026-09) stops it being imported twice.</li>
+</ol>
+<p class="muted">The platform never posts to NetSuite itself. The accrual is not reversed; retailer claims are credited against 22070 as now.</p>

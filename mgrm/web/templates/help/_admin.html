@@ -1,0 +1,25 @@
+<h2 id="admin">Administering the platform</h2>
+<table>
+  <thead><tr><th>To</th><th>Do this</th></tr></thead>
+  <tbody>
+    <tr><td><strong>Add a person</strong></td><td>Users &rarr; <em>Add a person</em>: name, work email, role, and either a temporary password (they choose their own at first sign-in) or Microsoft 365 &rarr; <em>Add</em>.</td></tr>
+    <tr><td><strong>Change someone's role</strong></td><td>Users &rarr; choose the new role on their row &rarr; <em>Save</em>. They are signed out everywhere and sign in again with the new role.</td></tr>
+    <tr><td><strong>Someone forgot their password</strong></td><td>Users &rarr; type a temporary password on their row &rarr; <em>Reset</em>, and tell them it; they choose their own at next sign-in.</td></tr>
+    <tr><td><strong>Someone leaves</strong></td><td>Users &rarr; <em>Remove access</em> on their row. They are signed out at once; their history stays. <em>Restore access</em> undoes it.</td></tr>
+    <tr><td><strong>A Group Product Manager approves a brand</strong></td><td>Give them the role <em>Brand rebate approver</em>, then Agreements &rarr; <em>Brand approvers</em> &rarr; assign the brand. From then on only they approve that brand's proposals.</td></tr>
+    <tr><td><strong>The forecasting platform's access</strong></td><td>Feed tokens: create one (shown once), put it in the forecasting platform's <code>.env</code>, revoke the old one. Tokens last a year.</td></tr>
+    <tr><td><strong>Check who did what</strong></td><td>Audit log: every sign-in, refused page, user change and data load, with the network address.</td></tr>
+  </tbody>
+</table>
+<p>Which roles to give:</p>
+<table>
+  <thead><tr><th>Role</th><th>For</th></tr></thead>
+  <tbody>
+    <tr><td>Rebate editor and approver</td><td>Ken, Siobhan: enter, and approve each other's.</td></tr>
+    <tr><td>Rebate editor / Rebate reviewer</td><td>Someone who should only enter, or only approve.</td></tr>
+    <tr><td>Brand rebate approver</td><td>Group Product Managers: approve their brands only; no sales figures.</td></tr>
+    <tr><td>Viewer</td><td>Raymond and anyone who only reads; no sales figures.</td></tr>
+  </tbody>
+</table>
+<p class="muted">The administrator does not approve rebates or journals (decided 9 Oct 2026), because an administrator can create accounts and could otherwise approve their own change through a second one.
+  If you are locked out, see the README in the rebate-master folder: <code>reset-password</code> on the server's command line.</p>

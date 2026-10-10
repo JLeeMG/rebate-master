@@ -1,0 +1,18 @@
+<h2 id="reviewing">Reviewing someone else's proposal</h2>
+{% if shown == Role.BRAND_APPROVER %}
+<p>You approve rate changes for the <strong>brands the administrator has assigned to you</strong>. Proposals for other brands show in Review
+  with the reason you cannot decide on them. You see rates but not sales figures.</p>
+{% elif shown == Role.REBATE_MAINTAINER %}
+<p>You and the other rebate editor and approver review each other's entries. You never see an Approve button on your own.
+  If a brand has an assigned approver (e.g. its Group Product Manager), only they can approve that brand's proposals.</p>
+{% else %}
+<p>You approve or reject what others enter. If a brand has an assigned approver (e.g. its Group Product Manager), only they can approve that brand's proposals.</p>
+{% endif %}
+
+<ol>
+  <li>Open <strong>Review</strong>. Rates and new agreements come first; changes to agreements (details, what it covers, endings) below.</li>
+  <li>For each one, <strong>open the evidence</strong> and check the rate, the dates, the customer and the brand against it. For a change to what an agreement covers, check the brands and stores listed against the trading terms.</li>
+  <li><strong>Approve</strong>, or <strong>Reject</strong> with a note saying why (a note is required, so the person who entered it can correct it).</li>
+  <li>Several rates checked against their sources can be approved together: tick them, tick <em>I have checked each selected rate against its source</em>, and click <em>Approve selected</em>.</li>
+</ol>
+<p class="muted">A wrong rate here is wrong in every accrual and forecast after it. If anything doesn't match the evidence, reject it with a note rather than approving and fixing later.</p>

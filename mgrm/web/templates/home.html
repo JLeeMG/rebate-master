@@ -1,7 +1,8 @@
 {% extends "base.html" %}
 {% block content %}
 <h1>Welcome, {{ user.display_name }}</h1>
-<p class="muted">You are signed in as <strong>{{ user.role.title }}</strong>: {{ ROLE_DESCRIPTIONS[user.role] }}</p>
+<p class="muted">You are signed in as <strong>{{ user.role.title }}</strong>: {{ ROLE_DESCRIPTIONS[user.role] }}
+  <a href="/help">How to use the rebate master as {{ user.role.title }}</a>.</p>
 
 <div class="cards">
   <a class="card" href="/rebates">
@@ -12,6 +13,12 @@
   <a class="card" href="/rebates/review">
     <h2>Review</h2>
     <p>{{ pending }} proposal{{ "" if pending == 1 else "s" }} (rates, new agreements, changes, endings) waiting for review.</p>
+  </a>
+  {% endif %}
+  {% if can(user.role, Permission.VIEW_SALES) %}
+  <a class="card" href="/rebates/accruals">
+    <h2>Monthly accrual</h2>
+    <p>Each month's rebate accrual from NetSuite sales, and the journal for NetSuite: prepared by one person, approved by another.</p>
   </a>
   {% endif %}
   <a class="card" href="/rebates/change-log">

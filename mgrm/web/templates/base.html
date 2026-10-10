@@ -12,13 +12,15 @@
   {% if user %}
   <nav>
     <a href="/rebates">Agreements</a>
-    {% if can(user.role, Permission.APPROVE_REBATES) %}<a href="/rebates/review">Review rates</a>{% endif %}
+    {% if can(user.role, Permission.APPROVE_REBATES) %}<a href="/rebates/review">Review</a>{% endif %}
+    {% if can(user.role, Permission.VIEW_SALES) %}<a href="/rebates/accruals">Monthly accrual</a><a href="/rebates/journals">Journals</a>{% endif %}
     <a href="/rebates/change-log">Change log</a>
     <a href="/rebates/rate-card">Rate cards</a>
     <a href="/customers">Customers</a>
     <a href="/brands">Brands</a>
     {% if can(user.role, Permission.MANAGE_REGISTERS) %}<a href="/loads">Load data</a>{% endif %}
     {% if can(user.role, Permission.MANAGE_USERS) %}<a href="/admin/users">Users</a><a href="/admin/audit">Audit log</a><a href="/admin/feed-tokens">Feed tokens</a>{% endif %}
+    <a href="/help" class="help-link">Help</a>
   </nav>
   <div class="who">
     {{ user.display_name }} &middot; {{ user.role.title }}

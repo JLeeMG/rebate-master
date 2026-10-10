@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+{% block title %}Help · {{ APP_NAME }}{% endblock %}
+{% set P = Permission %}
+{% set may = permissions %}
+{% block content %}
+<h1>How to use the rebate master</h1>
+<p class="subnav">Guide for:
+  {% for r in roles %}<a href="/help?role={{ r.value }}" {{ 'aria-current="page"' if r == shown }}>{% if r == shown %}<strong>{{ r.title }}</strong>{% else %}{{ r.title }}{% endif %}</a>{% endfor %}
+</p>
+{% if shown != user.role %}<p class="notice">You are reading the guide for <strong>{{ shown.title }}</strong>. You are signed in as {{ user.role.title }}: <a href="/help">your own guide</a>.</p>{% endif %}
+
+<p><strong>{{ shown.title }}:</strong> {{ ROLE_DESCRIPTIONS[shown] }}</p>
+
+<h2 id="menu">What's on your menu</h2>
+<table>
+  <thead><tr><th>Menu</th><th>What it's for</th></tr></thead>
+  <tbody>
+    <tr><td>Agreements</td><td>Every customer rebate agreement, by entity, customer and brand. Open one to see its rates and their history, its evidence, exactly what it covers, and its change log.</td></tr>
+    {% if P.APPROVE_REBATES in may %}<tr><td>Review</td><td>Everything waiting for someone to approve: rates, new agreements, changes to agreements, endings. {% if shown == Role.BRAND_APPROVER %}You can decide only on the brands assigned to you.{% endif %}</td></tr>{% endif %}
+    {% if P.VIEW_SALES in may %}<tr><td>Monthly accrual</td><td>The month's rebate accrual worked out from NetSuite sales, agreement by agreement and brand by brand.</td></tr>
+    <tr><td>Journals</td><td>Each month's accrual journal for NetSuite: prepared, approved, and downloaded for import.</td></tr>{% endif %}
+    <tr><td>Change log</td><td>Every change to a rate or an agreement: who, when, old and new, the reason, the evidence, and who approved it.</td></tr>
+    <tr><td>Rate cards</td><td>Approved rates in force on any date, for a customer group or a brand.</td></tr>
+    <tr><td>Customers / Brands</td><td>The NetSuite customers (and which retailer group each belongs to) and the classes that are brands.{% if P.MANAGE_REGISTERS in may %} You can change these.{% else %} Read only for you.{% endif %}</td></tr>
+    {% if P.MANAGE_REGISTERS in may %}<tr><td>Load data</td><td>Load the NetSuite exports: customer and class registers, and each month's sales.</td></tr>{% endif %}
+    {% if P.MANAGE_USERS in may %}<tr><td>Users / Audit log / Feed tokens</td><td>People and their roles, the full audit trail, and the forecasting platform's access to the rates.</td></tr>{% endif %}
+    <tr><td>Help</td><td>This page.</td></tr>
+  </tbody>
+</table>
+{% if P.VIEW_SALES not in may %}<p class="muted">Your role does not show sales amounts: agreement pages show rates but not the sales figures behind them, and the accrual screens are not on your menu.</p>{% endif %}
+
+{% if shown == Role.ADMIN %}{% include "help/_admin.html" %}{% endif %}
+{% if P.EDIT_REBATES in may %}{% include "help/_entering.html" %}{% endif %}
+{% if P.APPROVE_REBATES in may %}{% include "help/_reviewing.html" %}{% endif %}
+{% if P.VIEW_SALES in may and (P.EDIT_REBATES in may or P.APPROVE_REBATES in may) %}{% include "help/_accrual.html" %}{% endif %}
+{% if P.MANAGE_REGISTERS in may %}{% include "help/_registers.html" %}{% endif %}
+{% include "help/_reading.html" %}
+{% include "help/_everyone.html" %}
+{% endblock %}
