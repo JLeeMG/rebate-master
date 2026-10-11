@@ -35,6 +35,7 @@ from mgrm.rebates.scope import parse_scope
 from mgrm.models import (
     AppUser,
     ChangeKind,
+    Customer,
     EvidenceFile,
     RebateAgreement,
     RebateApproverScope,
@@ -230,6 +231,24 @@ def _require_reason(reason: str, what: str) -> None:
         raise RebateError(f"Give the reason for {what}.")
 
 
+def scope_entity_problem(session: Session, scope, entity_code: str) -> str | None:
+    """The journal customer and any listed stores must be NetSuite customers of the agreement's own entity
+    (Harvey Norman, JB Hi-Fi and Bunnings each have an AU and an NZ record)."""
+    ids = set(scope.customer_ids) | ({scope.journal_customer} if scope.journal_customer else set())
+    if not ids:
+        return None
+    entity_of = dict(session.execute(select(Customer.netsuite_customer_id, Customer.entity_code)
+                                     .where(Customer.netsuite_customer_id.in_(ids))).all())
+    unknown = sorted(ids - set(entity_of))
+    if unknown:
+        return f"Customer internal ID(s) {', '.join(map(str, unknown))} are not in the customer register."
+    other = sorted(i for i in ids if entity_of[i] != entity_code)
+    if other:
+        return (f"Customer internal ID(s) {', '.join(map(str, other))} belong to the other entity; this is an "
+                f"{entity_code} agreement, so use its {entity_code} customer records.")
+    return None
+
+
 def propose_agreement_change(
     session: Session, *, actor: AppUser, agreement: RebateAgreement, changes: dict, reason: str, source_reference: str = "",
     evidence: list[Upload],
@@ -237,7 +256,11 @@ def propose_agreement_change(
     """Propose new details for an agreement. Nothing changes until someone else approves. None if nothing differs."""
     _require_editor(actor)
     if changes.get("scope") is not None:
-        changes = {**changes, "scope": parse_scope(changes["scope"]).to_text()}  # canonical, or ScopeError
+        scope = parse_scope(changes["scope"])  # or ScopeError
+        problem = scope_entity_problem(session, scope, agreement.entity_code)
+        if problem:
+            raise RebateError(problem)
+        changes = {**changes, "scope": scope.to_text()}  # canonical
     changed = {k: [_plain(getattr(agreement, k)), _plain(v)] for k, v in changes.items()
                if k in AGREEMENT_FIELDS and _plain(getattr(agreement, k)) != _plain(v)}
     if not changed:

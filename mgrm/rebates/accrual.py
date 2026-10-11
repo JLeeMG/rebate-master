@@ -35,6 +35,7 @@ from mgrm.models import (
     SalesLine,
 )
 from mgrm.rebates.scope import NO_CLASS, ScopeError, parse_scope
+from mgrm.rebates.service import scope_entity_problem
 
 CENT = Decimal("0.01")
 USABLE_IN_BACKTEST = (ReviewStatus.APPROVED, ReviewStatus.PROPOSED)
@@ -114,6 +115,20 @@ def split_rebate(amounts: list[Decimal], rate: Decimal) -> list[Decimal]:
     return shares
 
 
+def possible_double_counts(lines: list[ScheduleLine], agreements: dict[int, RebateAgreement]) -> list[str]:
+    """Two accrued agreements of one retailer applying the same rate to the same brand's sales: usually one
+    rate counted twice (e.g. a general 0.3% line on top of a brand line that already carries its own 0.3%).
+    Stacked agreements are normal, so this warns rather than blocks."""
+    seen: dict[tuple, list[str]] = defaultdict(list)
+    for line in lines:
+        if line.accrue:
+            group = agreements[line.agreement_id].customer_group_code
+            seen[(group, line.brand_code, line.rate)].append(line.agreement_code)
+    return [f"{' and '.join(sorted(codes))} both apply {(rate * 100).normalize():f}% to {brand} sales at {group}: "
+            "check the rate isn't counted twice"
+            for (group, brand, rate), codes in sorted(seen.items(), key=lambda kv: kv[1]) if len(set(codes)) > 1]
+
+
 def build_schedule(session: Session, entity_code: str, period: date, *, include_proposed: bool = False) -> Schedule:
     schedule = Schedule(entity_code, period)
     sales = session.scalars(select(SalesLine).where(
@@ -178,6 +193,10 @@ def build_schedule(session: Session, entity_code: str, period: date, *, include_
         accrue = agreement.accrual_mode is AccrualMode.ACCRUE
         if accrue and scope.journal_customer is None:
             schedule.blockers.append(f"{agreement.code}: no customer is set for its journal lines")
+        problem = scope_entity_problem(session, scope, entity_code)
+        if problem:
+            schedule.blockers.append(f"{agreement.code}: {problem}")
+            continue
         if scope.customer_mode != "only" and not agreement.customer_group_code:
             schedule.blockers.append(f"{agreement.code}: covers a customer group, but has none")
             continue
@@ -192,6 +211,8 @@ def build_schedule(session: Session, entity_code: str, period: date, *, include_
                 agreement.id, agreement.code, agreement.customer_label, code, class_id, amount, rate.rate, rebate,
                 accrue, scope.journal_customer, rate.status.value,
             ))
+
+    schedule.warnings += possible_double_counts(schedule.lines, {a.id: a for a in agreements})
 
     for name, amount in sorted(unknown_customers.items(), key=lambda kv: -abs(kv[1]))[:20]:
         schedule.warnings.append(f"Sales of {amount:,.2f} to {name}, who is not in the customer register: load the register")

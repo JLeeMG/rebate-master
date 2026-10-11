@@ -243,6 +243,35 @@ def test_a_scope_awaiting_approval_counts_only_in_the_backtest(db, people, pb):
     assert build_schedule(db, "MGNZ", JUNE, include_proposed=True).by_agreement()[agreement.id][1] == Decimal("7180.83")
 
 
+def test_a_journal_customer_from_the_other_entity_is_refused(db, people, pb):
+    au_store = 900099
+    db.add(Customer(netsuite_customer_id=au_store, name="PB Tech (AU record)", entity_code="MGAU", customer_group_code="PBT"))
+    db.flush()
+    with pytest.raises(RebateError, match="belong to the other entity"):
+        propose_agreement_change(db, actor=people["siobhan"], agreement=pb["MGNZ-PBT-1"], reason="x", evidence=[],
+                                 changes={"scope": make_scope("all", [], journal_customer=au_store).to_text()})
+    with pytest.raises(RebateError, match="not in the customer register"):
+        propose_agreement_change(db, actor=people["siobhan"], agreement=pb["MGNZ-PBT-1"], reason="x", evidence=[],
+                                 changes={"scope": make_scope("all", [], journal_customer=123).to_text()})
+    # and if one got in some other way, the month cannot be journalled
+    pb["MGNZ-PBT-1"].scope = make_scope("all", [], journal_customer=au_store).to_text()
+    db.flush()
+    load_june(db, people)
+    assert any("other entity" in b for b in build_schedule(db, "MGNZ", JUNE).blockers)
+
+
+def test_the_same_rate_twice_on_one_brand_is_flagged(db, people, pb):
+    # a general 0.3%-style line set to all brands on top of one that already covers Bonelk at the same rate
+    pb["MGNZ-PBT-1"].scope = make_scope("all", [], journal_customer=PB_HEAD_OFFICE).to_text()
+    db.add(RebateRate(agreement_id=pb["MGNZ-PBT-2"].id, rate=Decimal("0.05"), effective_from=date(2025, 1, 1),
+                      status=ReviewStatus.APPROVED, source_reference="t", reason="t", load_flags=[],
+                      entered_by_id=people["siobhan"].id, reviewed_by_id=people["ken"].id, reviewed_at=datetime.now(UTC)))
+    db.flush()
+    load_june(db, people)
+    warnings = build_schedule(db, "MGNZ", JUNE).warnings
+    assert any("MGNZ-PBT-1 and MGNZ-PBT-2 both apply 5% to BONELK" in w for w in warnings), warnings
+
+
 def test_check_only_agreements_are_shown_but_not_accrued(db, people, pb):
     pb["MGNZ-PBT-2"].accrual_mode = AccrualMode.CHECK_ONLY
     db.flush()
