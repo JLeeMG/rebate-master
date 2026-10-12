@@ -119,7 +119,7 @@
 <h2>Propose exactly what it covers</h2>
 <p class="muted">Which brands and which stores the rate applies to, and which NetSuite customer the journal lines are tagged with
   (normally the retailer's head-office account its rebate claims are credited to). Brands are brand codes as on the Brands page;
-  stores are NetSuite customer internal IDs. Nothing changes until someone other than you approves it.</p>
+  stores are NetSuite customer internal IDs; item categories are as NetSuite's item field <em>Item category</em> shows them. Nothing changes until someone other than you approves it.</p>
 <form method="post" action="/rebates/agreement/{{ agreement.id }}/scope" class="grid">
   <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
   <label>Brands
@@ -131,6 +131,9 @@
   </label>
   <label>Store customer IDs (comma separated) <input name="customer_ids" value="{{ current.customer_ids|sort|join(', ') if current else '' }}"></label>
   <label>Journal customer ID <input name="journal_customer" inputmode="numeric" value="{{ current.journal_customer if current and current.journal_customer else '' }}"></label>
+  <label>Item categories, for brands where only some count (one brand per line; leave blank if every category counts)
+    <textarea name="category_rules" rows="3" placeholder="EUFY: only Security, Baby&#10;ANKER: except Accessories">{{ current.categories_text() if current else '' }}</textarea>
+  </label>
   <label>Reason <input name="reason" required placeholder="e.g. Confirmed with Ken: excludes Mova and Withings"></label>
   <button type="submit">Propose</button>
 </form>

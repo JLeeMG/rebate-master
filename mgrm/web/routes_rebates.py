@@ -36,7 +36,7 @@ from mgrm.models import (
     RebateWorkbookMonth,
     ReviewStatus,
 )
-from mgrm.rebates.scope import NO_CLASS, ScopeError, make_scope
+from mgrm.rebates.scope import NO_CLASS, ScopeError, make_scope, parse_category_lines
 from mgrm.rebates.service import (
     MAX_EVIDENCE_BYTES,
     RebateError,
@@ -292,6 +292,7 @@ def change_scope(
     customer_mode: str = Form(...),
     customer_ids: str = Form(""),
     journal_customer: str = Form(""),
+    category_rules: str = Form(""),
     reason: str = Form(""),
     user: AppUser = Depends(editor),
     db: Session = Depends(get_db),
@@ -300,8 +301,9 @@ def change_scope(
     try:
         ids = [int(i) for i in re.split(r"[,\s]+", customer_ids.strip()) if i]
         scope = make_scope(brand_mode, re.split(r"\s*,\s*", brand_codes.strip()) if brand_codes.strip() else [],
-                           customer_mode, ids, int(journal_customer) if journal_customer.strip() else None)
-        unknown = sorted(scope.brand_codes - set(db.scalars(select(Brand.code))) - {NO_CLASS})
+                           customer_mode, ids, int(journal_customer) if journal_customer.strip() else None,
+                           parse_category_lines(category_rules))
+        unknown = sorted((scope.brand_codes | set(scope.categories)) - set(db.scalars(select(Brand.code))) - {NO_CLASS})
         if unknown:
             raise RebateError(f"Not brand codes on the Brands page: {', '.join(unknown)}.")
         with db.begin_nested():

@@ -44,6 +44,7 @@ TRUE_TEXT = {"yes", "true", "t", "y", "1"}
 FALSE_TEXT = {"no", "false", "f", "n", "0", ""}
 MAX_PROBLEMS_PER_KIND = 25  # beyond this, one summary line; the file is rejected either way
 NETSUITE_TOTAL_ROW = "Overall Total"  # the last row of a summary search's CSV export
+NETSUITE_NONE = "- None -"  # how an export shows an empty list field
 
 
 @dataclass(frozen=True)
@@ -81,6 +82,7 @@ COLUMNS: dict[LoadKind, tuple[Column, ...]] = {
         Column("customer_id", ("Customer Fields : Internal ID", "Customer : Internal ID", "Customer Internal ID")),
         Column("debit", ("Debit Amount", "Amount (Debit)", "Debit")),
         Column("credit", ("Credit Amount", "Amount (Credit)", "Credit")),
+        Column("item_category", ("Item Category", "Item Fields : Item Category", "Item : Item Category"), False),
     ),
 }
 
@@ -310,6 +312,12 @@ def load_customers(session: Session, file: FileInput, actor: AppUser | None) -> 
     return batch
 
 
+def parse_category(text: str) -> str:
+    """NetSuite's item category as exported; blank and '- None -' both mean the item has none."""
+    text = text.strip()
+    return "" if text in ("", NETSUITE_NONE) else text[:100]
+
+
 def load_trading_detail(session: Session, file: FileInput, actor: AppUser | None, today: date | None = None) -> LoadBatch:
     """Net sales by entity, month, class and customer. Replaces whatever was held for the months in the file.
 
@@ -338,7 +346,8 @@ def load_trading_detail(session: Session, file: FileInput, actor: AppUser | None
             continue
         lines.append(SalesLine(entity_code=entity.value, period=period, account_code=account, netsuite_class_id=class_id,
                                class_name=row["class"][:200], netsuite_customer_id=customer_id,
-                               customer_name=row["name"][:300], amount=credit - debit))
+                               customer_name=row["name"][:300], item_category=parse_category(row.get("item_category", "")),
+                               amount=credit - debit))
     if problems:
         raise LoadRejected(file.name, problems.final())
     if not lines:

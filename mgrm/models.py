@@ -219,7 +219,7 @@ class LoadBatch(Base):
 
 
 class SalesLine(Base):
-    """Net sales from the trading detail search: one entity, month, account, class and customer.
+    """Net sales from the trading detail search: one entity, month, account, class, customer and item category.
 
     `amount` is credit less debit, so sales are positive and credit notes negative. A newer load
     replaces the months it covers, because NetSuite periods are not locked.
@@ -237,6 +237,7 @@ class SalesLine(Base):
     class_name: Mapped[str] = mapped_column(String(200), default="", server_default="")
     netsuite_customer_id: Mapped[int | None] = mapped_column(Integer)
     customer_name: Mapped[str] = mapped_column(String(300), default="", server_default="")
+    item_category: Mapped[str] = mapped_column(String(100), default="", server_default="")  # "" when not categorised
     amount: Mapped[Decimal] = mapped_column(Numeric(20, 2))
 
 

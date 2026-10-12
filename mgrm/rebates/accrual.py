@@ -2,7 +2,8 @@
 
 For one entity and month:
   - sales are the trading detail (account 40010, net of credit notes) loaded for that month;
-  - each agreement takes the sales its scope selects (customer group or listed stores x brands);
+  - each agreement takes the sales its scope selects (customer group or listed stores x brands, and
+    for some brands only some item categories);
   - the rate is the approved rate in force on the first day of the month;
   - the rebate is worked out per agreement and brand, to the cent, so the journal can carry the
     brand on every line.
@@ -144,7 +145,7 @@ def build_schedule(session: Session, entity_code: str, period: date, *, include_
     unknown_customers: dict[str, Decimal] = defaultdict(Decimal)
     ungrouped: dict[str, Decimal] = defaultdict(Decimal)
     unknown_classes: set[str] = set()
-    keyed = []  # (customer id, group, brand code, class id, amount)
+    keyed = []  # (customer id, group, brand code, class id, item category, amount)
     for s in sales:
         if s.netsuite_class_id is None:
             code = NO_CLASS
@@ -157,7 +158,8 @@ def build_schedule(session: Session, entity_code: str, period: date, *, include_
             unknown_customers[s.customer_name or str(s.netsuite_customer_id)] += s.amount
         elif group_of[s.netsuite_customer_id] is None:
             ungrouped[s.customer_name or str(s.netsuite_customer_id)] += s.amount
-        keyed.append((s.netsuite_customer_id, group_of.get(s.netsuite_customer_id), code, s.netsuite_class_id, s.amount))
+        keyed.append((s.netsuite_customer_id, group_of.get(s.netsuite_customer_id), code, s.netsuite_class_id,
+                      s.item_category, s.amount))
 
     agreements = session.scalars(select(RebateAgreement).where(RebateAgreement.entity_code == entity_code)
                                  .order_by(RebateAgreement.code)).all()
@@ -201,10 +203,20 @@ def build_schedule(session: Session, entity_code: str, period: date, *, include_
             schedule.blockers.append(f"{agreement.code}: covers a customer group, but has none")
             continue
         by_brand: dict[tuple[str, int | None], Decimal] = defaultdict(Decimal)
-        for customer_id, group, code, class_id, amount in keyed:
+        uncategorised: dict[str, Decimal] = defaultdict(Decimal)
+        for customer_id, group, code, class_id, category, amount in keyed:
             in_group = group is not None and group == agreement.customer_group_code
-            if scope.includes_customer(customer_id, in_group) and scope.includes_brand(code):
+            if not (scope.includes_customer(customer_id, in_group) and scope.includes_brand(code)):
+                continue
+            if code in scope.categories and not category:
+                uncategorised[code] += amount
+            if scope.includes_category(code, category):
                 by_brand[(code, class_id)] += amount
+        for code, amount in sorted(uncategorised.items()):
+            if amount:
+                schedule.warnings.append(
+                    f"{agreement.code}: {amount:,.2f} of {code} sales are on items with no item category, so they are "
+                    f"{'included' if scope.includes_category(code, '') else 'left out'}; categorise the items in NetSuite")
         brands = [(key, amount) for key, amount in sorted(by_brand.items(), key=lambda kv: kv[0][0]) if amount]
         for ((code, class_id), amount), rebate in zip(brands, split_rebate([a for _, a in brands], rate.rate)):
             schedule.lines.append(ScheduleLine(

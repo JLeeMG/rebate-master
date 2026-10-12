@@ -410,3 +410,92 @@ def test_proposing_a_scope_through_the_agreement_page(client, db, people, pb):
         "csrf_token": form_token(client, page), "brand_mode": "only", "brand_codes": "NOT_A_BRAND",
         "customer_mode": "group", "customer_ids": "", "journal_customer": "", "reason": "x"})
     assert refused.status_code == 400 and "NOT_A_BRAND" in refused.text
+
+
+# ---------------------------------------------------------------- item categories (e.g. EUFY Security / Baby / Appliances)
+
+CATEGORY_HEADER = HEADER.rstrip("\n") + ",Item Category\n"
+
+
+def categorised_rows():
+    """SATECHI's June sales split by item category, plus some on items with no category."""
+    nz, store = "Parent Company : MacGear NZ", PB_STORE
+    return [[nz, "1/06/2026", "40010", "SATECHI", CLASS_IDS["SATECHI"], "PB Tech Albany", store, "", "1000.00", "Security"],
+            [nz, "1/06/2026", "40010", "SATECHI", CLASS_IDS["SATECHI"], "PB Tech Albany", store, "", "300.00", "Baby"],
+            [nz, "1/06/2026", "40010", "SATECHI", CLASS_IDS["SATECHI"], "PB Tech Albany", store, "", "500.00", "Appliances"],
+            [nz, "1/06/2026", "40010", "SATECHI", CLASS_IDS["SATECHI"], "PB Tech Albany", store, "", "70.00", "- None -"],
+            [nz, "1/06/2026", "40010", "BONELK", CLASS_IDS["BONELK"], "PB Tech Albany", store, "", "200.00", ""]]
+
+
+def load_categorised(db, people):
+    content = trading_csv(categorised_rows()).replace(HEADER, CATEGORY_HEADER, 1)
+    return load_trading_detail(db, FileInput("trading.csv", content, str(hash(content))), people["siobhan"])
+
+
+def set_scope(db, agreement, scope):
+    agreement.scope = scope.to_text()
+    db.flush()
+
+
+def test_a_category_rule_is_stored_only_when_there_is_one():
+    plain = make_scope("only", ["EUFY"], journal_customer=1)
+    assert "categories" not in plain.to_text()  # scopes written before categories read and compare as before
+    ruled = make_scope("only", ["EUFY"], journal_customer=1, categories={"eufy": ("only", ["Security", " Baby"])})
+    assert '"categories":{"EUFY":{"mode":"only","names":["Baby","Security"]}}' in ruled.to_text()
+    assert parse_scope(ruled.to_text()) == ruled
+    assert ruled.includes_category("EUFY", "security") and not ruled.includes_category("EUFY", "Appliances")
+    assert not ruled.includes_category("EUFY", "") and ruled.includes_category("ANKER", "")
+    assert "EUFY only Baby, Security" in ruled.describe()
+
+
+def test_category_lines_as_typed_on_the_agreement_page():
+    from mgrm.rebates.scope import parse_category_lines
+    assert parse_category_lines("EUFY: only Security, Baby\n\nTwelve South: except Cases") == {
+        "EUFY": ("only", ["Security", "Baby"]), "TWELVE_SOUTH": ("all_but", ["Cases"])}
+    with pytest.raises(ScopeError, match="line 1"):
+        parse_category_lines("EUFY Security")
+    with pytest.raises(ScopeError, match="does not cover EUFY"):
+        make_scope("all_but", ["EUFY"], categories={"EUFY": ("only", ["Security"])})
+
+
+def test_sales_keep_their_item_category(db, people, pb):
+    load_categorised(db, people)
+    categories = {s.item_category for s in db.scalars(select(SalesLine))}
+    assert categories == {"Security", "Baby", "Appliances", ""}  # "- None -" and blank both mean none
+
+
+def test_only_the_categories_in_the_rule_count(db, people, pb):
+    load_categorised(db, people)
+    set_scope(db, pb["MGNZ-PBT-2"], make_scope("only", ["BONELK", "SATECHI"], journal_customer=PB_HEAD_OFFICE,
+                                               categories={"SATECHI": ("only", ["Security", "Baby"])}))
+    schedule = build_schedule(db, "MGNZ", JUNE)
+    sales = {line.brand_code: line.sales for line in schedule.lines if line.agreement_code == "MGNZ-PBT-2"}
+    assert sales == {"SATECHI": Decimal("1300.00"), "BONELK": Decimal("200.00")}  # BONELK has no rule: all of it
+    assert any("MGNZ-PBT-2: 70.00 of SATECHI sales are on items with no item category, so they are left out" in w
+               for w in schedule.warnings)
+
+
+def test_all_but_some_categories(db, people, pb):
+    load_categorised(db, people)
+    set_scope(db, pb["MGNZ-PBT-2"], make_scope("only", ["SATECHI"], journal_customer=PB_HEAD_OFFICE,
+                                               categories={"SATECHI": ("all_but", ["Appliances"])}))
+    schedule = build_schedule(db, "MGNZ", JUNE)
+    line = next(line for line in schedule.lines if line.agreement_code == "MGNZ-PBT-2")
+    assert line.sales == Decimal("1370.00") and line.rebate == Decimal("137.00")
+    assert any("70.00 of SATECHI sales are on items with no item category, so they are included" in w for w in schedule.warnings)
+
+
+def test_proposing_a_category_rule_through_the_agreement_page(client, db, people, pb):
+    sign_in(client, "siobhan@example.com")
+    page = f"/rebates/agreement/{pb['MGNZ-PBT-2'].id}"
+    response = client.post(f"{page}/scope", data={
+        "csrf_token": form_token(client, page), "brand_mode": "only", "brand_codes": "BONELK, SATECHI",
+        "customer_mode": "group", "customer_ids": "", "journal_customer": str(PB_HEAD_OFFICE),
+        "category_rules": "SATECHI: only Security, Baby", "reason": "Security and Baby only"})
+    assert "takes effect once someone else approves" in response.text
+    assert "SATECHI only Baby, Security" in response.text
+    refused = client.post(f"{page}/scope", data={
+        "csrf_token": form_token(client, page), "brand_mode": "only", "brand_codes": "BONELK, SATECHI",
+        "customer_mode": "group", "customer_ids": "", "journal_customer": str(PB_HEAD_OFFICE),
+        "category_rules": "SATECHI Security", "reason": "x"})
+    assert refused.status_code == 400 and "Category line 1" in refused.text
